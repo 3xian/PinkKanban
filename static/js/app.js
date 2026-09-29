@@ -387,7 +387,7 @@ function field(label, name, type, placeholder) {
 function shell() {
   return el("div", { class: "shell" },
     el("aside", { class: state.sidebar ? "sidebar is-open" : "sidebar" },
-      el("div", { class: "brand" }, mark(), el("span", { class: "brand-copy" }, el("strong", { text: "PinkKanban" }), el("small", { text: "看板" }))),
+      el("div", { class: "brand" }, mark(), el("span", { class: "brand-copy" }, el("strong", { text: "看板" }), el("small", { text: "多人任务协作" }))),
       el("nav", { class: "side-nav" },
         nav("projects", "项目", "board"),
         nav("tasks", "我的任务", "tasks"),
