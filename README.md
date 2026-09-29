@@ -6,14 +6,70 @@
 
 ## 功能
 
-- **项目**：新建 / 改名 / 换色 / 归档 / 恢复 / 删除 / 移交拥有者。每人每天最多新建 `DAILY_PROJECT_LIMIT` 个项目（默认 30），按 `APP_TIMEZONE` 的自然日计算。
-- **成员与角色**：`owner` > `admin` > `member` > `viewer`。只读成员能看不能写；邀请、改角色、移人需要 `admin`；移交和删除项目需要 `owner`。
-- **看板**：列表增删、改名、改在制品上限（WIP）、拖拽排序；至少保留一个列表。WIP 超出只在列表头标红提示，服务端不阻止移动。
-- **卡片**：标题、描述（Markdown）、优先级、截止日期、封面色、完成标记、归档、复制、跨列与同列拖拽排序。
+### 按角色能做什么
+
+四种角色，权限从高到低：`owner` > `admin` > `member` > `viewer`。项目创建者自动是 `owner`。
+
+```mermaid
+flowchart LR
+    subgraph O["owner 拥有者"]
+        O1["移交拥有者<br/>删除项目"]
+    end
+    subgraph A["admin 管理员"]
+        A1["发邀请 / 撤回邀请<br/>改成员角色 / 移除成员"]
+    end
+    subgraph M["member 成员"]
+        M1["建列表 / 建卡片<br/>编辑卡片内容<br/>拖卡片与列表排序<br/>评论 / 上传附件"]
+    end
+    subgraph V["viewer 只读"]
+        V1["看板与卡片<br/>项目活动流"]
+    end
+    O1 --> A1 --> M1 --> V1
+```
+
+每级都包含下一级的全部能力。区分点：
+
+- **owner**：唯一能移交拥有者和删除项目的角色。不能改自己的角色、不能被移除，退出项目前必须先移交。
+- **admin**：管人不管内容结构——发邀请、撤回邀请、调整成员角色、移除成员。删除别人的评论和附件也需要 `admin`。
+- **member**：干活的默认角色。列表、卡片、标签、清单、评论、附件都能增删改。
+- **viewer**：只能读。看板、卡片详情、活动流可见，任何写操作返回 403。
+
+### 邀请流程
+
+邀请是站内投递的，没有邮件。对方必须自己批准才会成为成员：
+
+```mermaid
+sequenceDiagram
+    participant A as admin/owner
+    participant N as 通知
+    participant B as 被邀请人
+    A->>N: 按已注册邮箱发邀请（指定角色）
+    N-->>B: 收到待处理邀请
+    alt 批准
+        B->>N: 接受
+        N-->>A: 邀请已接受通知
+    else 拒绝
+        B->>N: 拒绝
+        N-->>A: 邀请被拒绝通知
+    else 不处理
+        A->>N: 撤回邀请
+    end
+```
+
+约束：只能邀请已注册邮箱，不能邀请自己，已在项目中或已有待处理邀请都会报 409。邀请时不能指定 `owner`（`ASSIGNABLE_ROLES` 只有 admin/member/viewer）。
+
+### 看板与卡片
+
+- **列表**：增删改名、改在制品上限（WIP）、拖拽排序；至少保留一个列表，删除列表时卡片会并入相邻列表。WIP 超出只在列表头标红提示，服务端不阻止移动。
+- **卡片**：标题、描述（Markdown）、优先级（无/低/中/高/紧急）、截止日期、封面色、完成标记、归档、复制；支持跨列与同列拖拽排序。
 - **卡片详情**：标签、指派成员、清单（含勾选进度）、评论、附件、该卡片最近 30 条活动。
-- **邀请与通知**：邀请以通知形式投递，接收方接受或拒绝；另有 `@提及`、指派、评论、项目移交等通知类型。
-- **筛选与「我的任务」**：按关键词、我的、逾期、标签、优先级、隐藏完成、已归档筛选卡片；另有跨项目的「我的任务」视图。
-- **项目活动流**：记录创建、移动、指派、评论、成员变动等 21 类动作。
+- **筛选**：关键词、我的、逾期、标签、优先级、隐藏完成、已归档。筛选开启时禁用拖拽，避免按可见子集算出的落点错位。
+- **我的任务**：跨项目汇总指派给你的卡片，`?q=` 按标题过滤。
+- **活动流**：记录创建、移动、指派、评论、成员变动等 21 类动作。
+
+### 项目与配额
+
+新建 / 改名 / 换色 / 归档 / 恢复 / 删除 / 移交。每人每天最多新建 `DAILY_PROJECT_LIMIT` 个项目（默认 30），按 `APP_TIMEZONE` 的自然日计算，超出返回 429。
 
 ## 技术栈
 
@@ -60,30 +116,6 @@ run.bat
 | `DAILY_PROJECT_LIMIT` | `30` | 非整数回退 30，最小 1 |
 | `APP_SECURE_COOKIE` | `0` | 置 `1` 给会话 Cookie 加 `Secure`，仅在 HTTPS 下开启 |
 
-## 目录结构
-
-```
-app/
-  main.py        应用装配、CSRF 中间件、安全响应头、SPA 回退、/api/health
-  config.py      .env 读取与配置访问器
-  db.py          engine / session / 建库建表 / 提交后删文件
-  models.py      15 张表的 SQLAlchemy 模型
-  schemas.py     Pydantic 入参与清洗（邮箱小写、名称截断与去空白）
-  services.py    全部业务规则与权限校验
-  routers/       auth、projects、board、inbox
-  security.py    scrypt 口令、会话签名
-  limit.py       进程内滑动窗口限流
-  constants.py   角色、优先级、配色、各类上限
-static/
-  index.html     单页入口
-  js/app.js      状态机与所有视图
-  js/dnd.js      Pointer Events 拖拽（鼠标直接拖，触屏长按 280ms）
-  js/format.js   时间、Markdown、头像等展示工具
-tests/           pytest，跑在 kanban_test 库
-deploy/initdb/   容器首次初始化时创建测试库并授权
-uploads/         附件落盘目录（内容已 gitignore）
-```
-
 ## API
 
 **写操作必须带 `X-Kanban: 1` 请求头**。`app/main.py` 的中间件会对 `POST/PUT/PATCH/DELETE` 且路径以 `/api/` 开头的请求校验该头，缺失返回 403。这是一层便宜的 CSRF 防护：浏览器表单无法伪造自定义头。前端 `static/js/api.js` 统一带上。
@@ -124,11 +156,11 @@ uploads/         附件落盘目录（内容已 gitignore）
 
 `ROLE_RANK` 为 `viewer 1 < member 2 < admin 3 < owner 4`，`services.py` 里统一由三个入口校验：
 
-- `require_access`：非成员一律 404（不泄露项目是否存在），角色不足 403，归档项目拒绝写（409）。
+- `require_access`：绝大多数操作的入口。非成员一律 404（不泄露项目是否存在），角色不足 403，归档项目拒绝写（409）。
 - `begin_write`：在项目行上加 `SELECT ... FOR UPDATE`，串行化同一项目的并发写。
 - `_require_card`：由卡片反查项目后复用上面两条。
 
-写操作默认要求 `member` 及以上；邀请/角色/移除成员要求 `admin`；移交与删除要求 `owner`。评论和附件只能改删自己的，`admin` 及以上例外。拥有者不能改自己角色、不能被移除、退出前需先移交。
+这三个入口在每个写操作开头调用，没有旁路。角色与能力的对应关系见上文「按角色能做什么」。
 
 ## 限额
 
