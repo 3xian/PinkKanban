@@ -55,6 +55,32 @@ function filtersOn() {
   return Boolean(f.q || f.mine || f.overdue || f.label || f.priority || f.hideDone || f.archived);
 }
 
+function toggleFilterPop(trigger) {
+  const pop = trigger.querySelector(".filter-pop");
+  if (!pop) return;
+  const wasOpen = !pop.hidden;
+  closeFilterPops();
+  if (wasOpen) return;
+  pop.hidden = false;
+  trigger.setAttribute("aria-expanded", "true");
+  trigger.classList.add("is-open");
+  for (const item of pop.querySelectorAll(".filter-item")) {
+    if (item.classList.contains("is-on")) item.focus({ preventScroll: true });
+    break;
+  }
+}
+
+function closeFilterPops() {
+  for (const pop of document.querySelectorAll(".filter-pop")) pop.hidden = true;
+  for (const trigger of document.querySelectorAll(".filter-trigger")) {
+    trigger.setAttribute("aria-expanded", "false");
+    trigger.classList.remove("is-open");
+  }
+}
+
+document.addEventListener("click", (event) => {
+  if (!event.target.closest(".filter-trigger")) closeFilterPops();
+});
 function paintFilterLock() {
   const note = document.querySelector("[data-filter-lock]");
   if (note) note.hidden = !filtersOn();
@@ -407,12 +433,7 @@ function shell() {
     ),
     state.sidebar ? el("button", { class: "backdrop", "data-act": "close-side", "aria-label": "关闭菜单" }) : null,
     el("div", { class: "main" },
-      el("header", { class: "topbar" },
-        el("button", { class: "icon-btn menu-btn", "data-act": "toggle-side", "aria-label": "菜单" }, glyph("menu")),
-        el("div", { class: "top-brand" }, mark(), "看板"),
-        el("span", { class: "spacer" }),
-        el("button", { class: "icon-btn", "data-act": "nav", "data-view": "notifications", "aria-label": "通知" }, glyph("bell"), state.unread ? el("i", { class: "dot" }) : null),
-      ),
+      el("button", { class: "icon-btn floating-menu", "data-act": "toggle-side", "aria-label": "菜单" }, glyph("menu")),
       el("div", { class: "view" }, viewBody()),
     ),
     el("nav", { class: "tabbar" },
@@ -494,8 +515,14 @@ function boardView() {
     el("div", { class: "filters" },
       el("label", { class: "search-wrap" }, glyph("search"), el("input", { class: "search", id: "board-search", placeholder: "搜索卡片", value: state.filters.q, "aria-label": "搜索卡片" })),
       el("div", { class: "filter-chips" }, chip("mine", "我的"), chip("overdue", "延期"), chip("hideDone", "隐藏完成"), chip("archived", "归档")),
-      el("select", { id: "filter-label", "aria-label": "标签" }, el("option", { value: "", text: "全部标签" }), ...state.board.labels.map((label) => el("option", { value: label.id, text: label.name, selected: String(state.filters.label) === String(label.id) }))),
-      el("select", { id: "filter-priority", "aria-label": "优先级" }, ...PRIORITIES.map(([value, label]) => el("option", { value: value === "none" ? "" : value, text: value === "none" ? "全部优先级" : label, selected: state.filters.priority === value }))),
+      filterSelect("filter-label", "标签", [
+        { value: "", label: "全部标签" },
+        ...state.board.labels.map((label) => ({ value: label.id, label: label.name })),
+      ], state.filters.label),
+      filterSelect("filter-priority", "优先级", [
+        { value: "", label: "全部优先级" },
+        ...PRIORITIES.filter(([value]) => value !== "none").map(([value, label]) => ({ value, label })),
+      ], state.filters.priority),
       el("span", { class: "filter-note", "data-filter-lock": "1", hidden: !filtersOn() }, glyph("info"), "筛选开启时暂停拖拽"),
     ),
     canvasNode(),
@@ -504,6 +531,40 @@ function boardView() {
 
 function chip(key, label) {
   return el("button", { class: state.filters[key] ? "chip is-on" : "chip", "data-act": "filter", "data-key": key, text: label });
+}
+
+function filterSelect(id, kind, options, current) {
+  const selected = options.find((opt) => String(opt.value) === String(current || "")) || options[0];
+  const trigger = el("button", {
+    type: "button",
+    class: "filter-trigger",
+    id,
+    "data-act": "filter-select",
+    "data-filter": id,
+    "aria-haspopup": "listbox",
+    "aria-expanded": "false",
+    "aria-label": kind,
+  },
+    glyph("chevron-down"),
+    el("span", { class: "filter-trigger-text", text: selected.label }),
+  );
+  const list = el("ul", { class: "filter-pop", role: "listbox", hidden: true },
+    ...options.map((opt) => {
+      const on = String(opt.value) === String(current || "");
+      return el("li", {
+        role: "option",
+        tabindex: "-1",
+        class: on ? "filter-item is-on" : "filter-item",
+        "data-act": "filter-pick",
+        "data-filter": id,
+        "data-value": String(opt.value),
+        "aria-selected": on ? "true" : "false",
+        text: opt.label,
+      });
+    }),
+  );
+  trigger.append(list);
+  return trigger;
 }
 
 function canvasNode() {
@@ -953,6 +1014,19 @@ const clicks = {
     state.filters[node.dataset.key] = !state.filters[node.dataset.key];
     render();
   },
+  "filter-select"(node, event) {
+    toggleFilterPop(node);
+  },
+  "filter-pick"(node) {
+    const trigger = node.closest(".filter-trigger");
+    if (!trigger) return;
+    const key = trigger.id === "filter-label" ? "label" : "priority";
+    state.filters[key] = node.dataset.value || "";
+    closeFilterPops();
+    paintCanvas();
+    paintFilterLock();
+  },
+
   compose(node) {
     state.compose = { columnId: Number(node.dataset.column) };
     paintCanvas();
@@ -1170,12 +1244,6 @@ document.addEventListener("submit", (event) => {
 
 document.addEventListener("change", (event) => {
   const node = event.target;
-  if (node.id === "filter-label" || node.id === "filter-priority") {
-    state.filters[node.id === "filter-label" ? "label" : "priority"] = node.value;
-    paintCanvas();
-    paintFilterLock();
-    return;
-  }
   if (node.dataset.act === "role") {
     run(node, async () => {
       state.settings = await api(`/api/projects/${state.projectId}/members/${node.dataset.id}`, { method: "PATCH", body: { role: node.value } });
@@ -1212,6 +1280,7 @@ document.addEventListener("focusout", (event) => {
 
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
+  if (document.querySelector(".filter-trigger.is-open")) { closeFilterPops(); return; }
   if (state.modal) {
     state.modal = null;
     paintModal();
