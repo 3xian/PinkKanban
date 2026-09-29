@@ -72,7 +72,7 @@ export function dueInfo(value) {
   today.setHours(0, 0, 0, 0);
   const due = new Date(`${value}T00:00:00`);
   const diff = Math.round((due - today) / 86400000);
-  if (diff < 0) return { text: `逾期 ${-diff} 天`, over: true };
+  if (diff < 0) return { text: `延期 ${-diff} 天`, over: true };
   if (diff === 0) return { text: "今天到期", today: true };
   if (diff === 1) return { text: "明天" };
   return { text: `${due.getMonth() + 1}月${due.getDate()}日` };

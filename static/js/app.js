@@ -193,7 +193,7 @@ function closeDrawer() {
 function render() {
   const authed = Boolean(state.user);
   document.body.classList.toggle("is-auth", !authed);
-  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", authed ? "#161311" : "#080b12");
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", "#080b12");
   app.replaceChildren(authed ? shell() : authView());
   if (!authed) startAuthMotion(app.querySelector(".auth"));
   paintBadges();
@@ -218,7 +218,7 @@ function authView() {
     el("div", { class: "auth-vignette" }),
     el("div", { class: "auth-noise" }),
     el("header", { class: "auth-bar" },
-      el("div", { class: "auth-brand" }, el("span", { class: "auth-dot" }), "看板", el("small", { text: "邮箱账号" })),
+      el("div", { class: "auth-brand" }, mark(), "看板", el("small", { text: "多人任务协作" })),
     ),
     el("form", { class: "auth-card", "data-form": "auth" },
       el("h2", { text: login ? "欢迎回来" : "创建账号" }),
@@ -235,6 +235,35 @@ function authView() {
     ),
     el("div", { class: "auth-hint", text: "MOVE · SCROLL · EXPLORE" }),
   );
+}
+
+function codeField() {
+  return el("label", { class: "field" }, "验证码",
+    el("div", { class: "code-row" },
+      el("input", { name: "code", type: "text", inputmode: "numeric", autocomplete: "one-time-code", placeholder: "6 位数字", required: true, maxlength: "6", pattern: "\\d{6}" }),
+      el("button", { type: "button", class: "btn btn-ghost", "data-act": "send-code", disabled: state.codeWait > 0, text: state.codeWait > 0 ? `${state.codeWait}s` : "获取验证码" }),
+    ),
+  );
+}
+
+let codeTimer = 0;
+
+function startCodeWait(seconds) {
+  state.codeWait = seconds;
+  clearInterval(codeTimer);
+  paintCodeWait();
+  codeTimer = setInterval(() => {
+    state.codeWait = Math.max(0, state.codeWait - 1);
+    paintCodeWait();
+    if (state.codeWait === 0) clearInterval(codeTimer);
+  }, 1000);
+}
+
+function paintCodeWait() {
+  const button = document.querySelector("[data-act=send-code]");
+  if (!button) return;
+  button.textContent = state.codeWait > 0 ? `${state.codeWait}s` : "获取验证码";
+  button.disabled = state.codeWait > 0;
 }
 
 const SPACE_TITLES = ["产品发布", "设计系统", "增长冲刺", "移动端", "研究笔记", "上线清单", "品牌刷新", "数据分析"];
@@ -343,7 +372,7 @@ function startAuthMotion(root) {
 }
 
 function mark() {
-  return el("span", { class: "mark", "aria-hidden": "true" }, el("i"), el("i"), el("i"));
+  return el("img", { class: "mark", src: "/static/favicon.svg", alt: "", width: "28", height: "28" });
 }
 
 function field(label, name, type, placeholder) {
@@ -373,7 +402,7 @@ function shell() {
     el("div", { class: "main" },
       el("header", { class: "topbar" },
         el("button", { class: "icon-btn menu-btn", "data-act": "toggle-side", "aria-label": "菜单" }, glyph("menu")),
-
+        el("div", { class: "top-brand" }, mark(), "看板"),
         el("span", { class: "spacer" }),
         el("button", { class: "icon-btn", "data-act": "nav", "data-view": "notifications", "aria-label": "通知" }, glyph("bell"), state.unread ? el("i", { class: "dot" }) : null),
       ),
@@ -446,7 +475,7 @@ function boardView() {
     el("div", { class: "filters" },
       el("input", { class: "search", id: "board-search", placeholder: "搜索卡片", value: state.filters.q }),
       chip("mine", "我的"),
-      chip("overdue", "逾期"),
+      chip("overdue", "延期"),
       chip("hideDone", "隐藏完成"),
       chip("archived", "归档"),
       el("select", { id: "filter-label", "aria-label": "标签" }, el("option", { value: "", text: "全部标签" }), ...state.board.labels.map((label) => el("option", { value: label.id, text: label.name, selected: String(state.filters.label) === String(label.id) }))),
@@ -530,7 +559,7 @@ function priorityColor(priority) {
 
 function tasksView() {
   const groups = [
-    ["逾期", state.tasks.filter((card) => dueInfo(card.due_on)?.over && !card.done)],
+    ["延期", state.tasks.filter((card) => dueInfo(card.due_on)?.over && !card.done)],
     ["今天", state.tasks.filter((card) => dueInfo(card.due_on)?.today && !card.done)],
     ["之后", state.tasks.filter((card) => !dueInfo(card.due_on)?.over && !dueInfo(card.due_on)?.today)],
   ];

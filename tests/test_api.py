@@ -77,6 +77,12 @@ def test_project_board_and_quota(client):
     body = created.json()
     assert body["quota"]["used"] == 1
     project_id = body["project"]["id"]
+    notes = client.get("/api/notifications").json()
+    created_note = next(item for item in notes["items"] if item["type"] == "project_created")
+    assert created_note["title"] == "项目已创建"
+    assert created_note["body"] == "你创建了「春季发布」"
+    assert created_note["project_id"] == project_id
+    assert notes["unread"] == 1
     board = client.get(f"/api/projects/{project_id}/board").json()
     assert [column["name"] for column in board["columns"]] == ["待办", "进行中", "已完成"]
     assert {label["name"] for label in board["labels"]} == {"重要", "设计", "开发", "阻塞"}

@@ -120,6 +120,15 @@ def create_project(db: Session, user: User, name: str, description: str, color: 
     for label_name, label_color in DEFAULT_LABELS:
         db.add(Label(project_id=project.id, name=label_name, color=label_color))
     _activity(db, project_id=project.id, user_id=user.id, action="project.created", detail={"name": name})
+    _notify(
+        db,
+        recipient_id=user.id,
+        actor_id=None,
+        type="project_created",
+        title="项目已创建",
+        body=f"你创建了「{name}」",
+        project_id=project.id,
+    )
     db.flush()
     return project
 

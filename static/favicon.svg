@@ -1,6 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <rect width="32" height="32" rx="8" fill="#161311"/>
-  <rect x="6" y="7" width="5" height="18" rx="1.5" fill="#F6F1EA" opacity=".45"/>
-  <rect x="13.5" y="7" width="5" height="12" rx="1.5" fill="#F6F1EA"/>
-  <rect x="21" y="7" width="5" height="7" rx="1.5" fill="#D63A56"/>
+  <defs>
+    <linearGradient id="ring" x1="2" y1="2" x2="30" y2="30" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8b72ff"/>
+      <stop offset="1" stop-color="#34d9ff"/>
+    </linearGradient>
+    <linearGradient id="mid" x1="13" y1="6" x2="19" y2="26" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#d7ccff"/>
+      <stop offset="1" stop-color="#34d9ff"/>
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="9" fill="#0b0f18"/>
+  <rect x=".7" y=".7" width="30.6" height="30.6" rx="8.3" fill="none" stroke="url(#ring)" stroke-width="1.4"/>
+  <rect x="6.2" y="7" width="4.6" height="18" rx="1.6" fill="#f5f7fb" opacity=".42"/>
+  <rect x="13.7" y="7" width="4.6" height="13" rx="1.6" fill="url(#mid)"/>
+  <rect x="21.2" y="7" width="4.6" height="8.5" rx="1.6" fill="#7ee9ff" opacity=".9"/>
 </svg>
