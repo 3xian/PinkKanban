@@ -14,6 +14,7 @@ export function installDrag({ canDrag, onTap, onDrop, onDragChange }) {
     session?.origin?.classList.remove("is-dragging");
     if (session?.origin) session.origin.hidden = false;
     document.querySelector(".board-canvas")?.classList.remove("is-sorting");
+    document.querySelectorAll(".column.is-drop").forEach((node) => node.classList.remove("is-drop"));
     if (session?.frame) cancelAnimationFrame(session.frame);
   }
 
@@ -64,6 +65,13 @@ export function installDrag({ canDrag, onTap, onDrop, onDragChange }) {
     if (event) event.preventDefault();
   }
 
+  function markDrop(column) {
+    document.querySelectorAll(".column.is-drop").forEach((node) => {
+      if (node !== column) node.classList.remove("is-drop");
+    });
+    column?.classList.add("is-drop");
+  }
+
   function movePlaceholder(x, y) {
     session.ghost.style.display = "none";
     const hit = document.elementFromPoint(x, y);
@@ -71,6 +79,7 @@ export function installDrag({ canDrag, onTap, onDrop, onDragChange }) {
     if (session.kind === "card") {
       const column = hit?.closest("[data-drop-column]");
       const body = column?.querySelector(".column-cards");
+      markDrop(column || null);
       if (!body) return;
       const card = hit?.closest("[data-drag='card']");
       if (card && card !== session.origin && body.contains(card)) {
@@ -81,7 +90,11 @@ export function installDrag({ canDrag, onTap, onDrop, onDragChange }) {
     }
     const board = document.querySelector(".board-canvas");
     const column = hit?.closest("[data-drop-column]");
-    if (!board || !column || column === session.origin) return;
+    if (!board || !column || column === session.origin) {
+      markDrop(null);
+      return;
+    }
+    markDrop(column);
     const rect = column.getBoundingClientRect();
     board.insertBefore(session.placeholder, x < rect.left + rect.width / 2 ? column : column.nextSibling);
   }

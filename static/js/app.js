@@ -36,8 +36,8 @@ const modal = document.getElementById("modal");
 const toasts = document.getElementById("toasts");
 
 function toast(message) {
-  const node = el("div", { class: "toast", text: message });
-  toasts.append(node);
+  const node = el("div", { class: "toast" }, glyph("info"), el("span", { text: message }));
+  toasts?.append(node);
   setTimeout(() => node.remove(), 3200);
 }
 
@@ -53,6 +53,11 @@ function editable() {
 function filtersOn() {
   const f = state.filters;
   return Boolean(f.q || f.mine || f.overdue || f.label || f.priority || f.hideDone || f.archived);
+}
+
+function paintFilterLock() {
+  const note = document.querySelector("[data-filter-lock]");
+  if (note) note.hidden = !filtersOn();
 }
 
 function findCard(id) {
@@ -382,11 +387,11 @@ function field(label, name, type, placeholder) {
 function shell() {
   return el("div", { class: "shell" },
     el("aside", { class: state.sidebar ? "sidebar is-open" : "sidebar" },
-      el("div", { class: "brand" }, mark(), "看板"),
+      el("div", { class: "brand" }, mark(), el("span", { class: "brand-copy" }, el("strong", { text: "PinkKanban" }), el("small", { text: "看板" }))),
       el("nav", { class: "side-nav" },
         nav("projects", "项目", "board"),
         nav("tasks", "我的任务", "tasks"),
-        nav("notifications", "通知", "bell", state.unread > 0),
+        nav("notifications", "通知", "bell", true),
       ),
       el("div", { class: "side-label", text: "最近" }),
       el("div", { class: "side-projects" }, ...state.projects.slice(0, 12).map((project) => {
@@ -396,7 +401,9 @@ function shell() {
         link.append(dot, el("span", { text: project.name }));
         return link;
       })),
-      el("button", { class: "user-chip", "data-act": "nav", "data-view": "account" }, avatar(state.user, "lg"), el("span", {}, el("strong", { text: state.user.display_name }), el("small", { text: state.user.email }))),
+      el("div", { class: "side-foot" },
+        el("button", { class: "user-chip", "data-act": "nav", "data-view": "account" }, avatar(state.user), el("span", {}, el("strong", { text: state.user.display_name }), el("small", { text: state.user.email }))),
+      ),
     ),
     state.sidebar ? el("button", { class: "backdrop", "data-act": "close-side", "aria-label": "关闭菜单" }) : null,
     el("div", { class: "main" },
@@ -423,7 +430,7 @@ function nav(view, label, iconName, badge = false) {
 
 function tab(view, label, iconName) {
   const button = el("button", { class: state.view === view ? "is-on" : "", "data-act": "nav", "data-view": view }, glyph(iconName), label);
-  if (view === "notifications" && state.unread) button.append(el("i", { class: "badge", text: String(state.unread) }));
+  if (view === "notifications") button.append(el("i", { class: "badge", "data-badge": "1", text: state.unread ? String(state.unread) : "" }));
   return button;
 }
 
@@ -441,47 +448,56 @@ function projectsView() {
   return el("section", {},
     el("div", { class: "page-head" },
       el("div", {}, el("h2", { text: state.showArchived ? "归档" : "项目" }), el("p", { text: `今天还可创建 ${state.quota.remaining} / ${state.quota.limit} 个` })),
-      el("div", { class: "row" },
+      el("div", { class: "page-actions" },
         el("button", { class: "btn-ghost", "data-act": "toggle-archived", text: state.showArchived ? "返回项目" : "已归档" }),
         el("button", { class: "btn-primary", "data-act": "new-project", disabled: state.quota.remaining <= 0 }, glyph("plus"), el("span", { text: "新建" })),
       ),
     ),
-    list.length ? el("div", { class: "project-grid" }, ...list.map(projectCard)) : el("div", { class: "empty" }, el("strong", { text: "还没有项目" }), "建一个，从第一张卡片开始。"),
+    list.length ? el("div", { class: "project-grid" }, ...list.map(projectCard)) : emptyState("还没有项目", "建一个，从第一张卡片开始。"),
   );
+}
+
+function emptyState(title, body) {
+  return el("div", { class: "empty" }, el("div", { class: "empty-mark" }, glyph("board")), el("strong", { text: title }), body ? el("p", { text: body }) : null);
 }
 
 function projectCard(project) {
   const card = el("button", { class: "project-card", "data-act": "open-project", "data-id": project.id });
   card.style.setProperty("--c", safeColor(project.color));
+  const dot = el("i", { class: "dot" });
+  dot.style.setProperty("--c", safeColor(project.color));
+  const go = glyph("arrow");
+  go.classList.add("project-go");
   card.append(
-    el("strong", { text: project.name }),
+    el("div", { class: "project-top" }, dot, el("strong", { text: project.name }), go),
     el("p", { text: project.description || "没有简介" }),
-    el("div", { class: "meta" }, `${project.open_cards} 张卡片`, "·", `${project.member_count} 人`, "·", ROLES[project.role] || ""),
+    el("div", { class: "project-foot" },
+      el("span", { text: `${project.open_cards} 张卡片` }),
+      el("span", { text: `${project.member_count} 人` }),
+      el("span", { class: "project-role", text: ROLES[project.role] || "" }),
+    ),
   );
   return card;
 }
 
 function boardView() {
-  if (!state.board) return el("div", { class: "empty" }, el("strong", { text: "选择一个项目" }));
+  if (!state.board) return emptyState("选择一个项目");
   const project = state.board.project;
   return el("section", { class: "board-page" },
     el("div", { class: "board-head" },
       el("div", {}, el("h2", { text: project.name }), el("p", { class: "muted", text: project.description || "把卡片拖到它该在的位置。" })),
-      el("div", { class: "row" },
+      el("div", { class: "board-people" },
         el("div", { class: "faces" }, ...state.board.members.slice(0, 5).map((person) => avatar(person))),
-        el("button", { class: "btn-ghost", "data-act": "open-settings", "data-id": project.id, text: "成员" }),
+        el("button", { class: "btn-ghost", "data-act": "open-settings", "data-id": project.id }, glyph("user"), el("span", { text: "成员" })),
       ),
     ),
     el("div", { class: "filters" },
-      el("input", { class: "search", id: "board-search", placeholder: "搜索卡片", value: state.filters.q }),
-      chip("mine", "我的"),
-      chip("overdue", "延期"),
-      chip("hideDone", "隐藏完成"),
-      chip("archived", "归档"),
+      el("label", { class: "search-wrap" }, glyph("search"), el("input", { class: "search", id: "board-search", placeholder: "搜索卡片", value: state.filters.q, "aria-label": "搜索卡片" })),
+      el("div", { class: "filter-chips" }, chip("mine", "我的"), chip("overdue", "延期"), chip("hideDone", "隐藏完成"), chip("archived", "归档")),
       el("select", { id: "filter-label", "aria-label": "标签" }, el("option", { value: "", text: "全部标签" }), ...state.board.labels.map((label) => el("option", { value: label.id, text: label.name, selected: String(state.filters.label) === String(label.id) }))),
       el("select", { id: "filter-priority", "aria-label": "优先级" }, ...PRIORITIES.map(([value, label]) => el("option", { value: value === "none" ? "" : value, text: value === "none" ? "全部优先级" : label, selected: state.filters.priority === value }))),
+      el("span", { class: "filter-note", "data-filter-lock": "1", hidden: !filtersOn() }, glyph("info"), "筛选开启时暂停拖拽"),
     ),
-    filtersOn() ? el("p", { class: "muted", text: "筛选开启时不能拖动，避免放错位置。" }) : null,
     canvasNode(),
   );
 }
@@ -493,7 +509,7 @@ function chip(key, label) {
 function canvasNode() {
   const node = el("div", { class: "board-canvas", id: "board-canvas" });
   for (const column of state.board.columns) node.append(columnNode(column));
-  if (editable()) node.append(el("button", { class: "btn-ghost add-column", "data-act": "new-column" }, glyph("plus"), el("span", { text: "添加列表" })));
+  if (editable()) node.append(el("button", { class: "add-column", "data-act": "new-column" }, glyph("plus"), el("span", { text: "添加列表" })));
   return node;
 }
 
@@ -510,12 +526,16 @@ function columnNode(column) {
   const cards = column.cards.filter(visible);
   const live = column.cards.filter((card) => !card.archived);
   const node = el("section", { class: "column", "data-drop-column": column.id });
+  const dot = el("i", { class: "col-dot" });
+  dot.style.setProperty("--c", safeColor(column.color));
+  const over = Boolean(column.wip_limit && live.length > column.wip_limit);
   const head = el("div", { class: "column-head" },
     editable() ? el("button", { class: "grip", "data-drag": "column", "data-id": column.id, "aria-label": "拖动列表" }, glyph("grip")) : null,
+    dot,
     el("strong", { text: column.name }),
-    el("span", { class: column.wip_limit && live.length > column.wip_limit ? "wip is-over" : "count", text: column.wip_limit ? `${live.length}/${column.wip_limit}` : String(live.length) }),
+    el("span", { class: over ? "wip is-over" : "count", text: column.wip_limit ? `${live.length} / ${column.wip_limit}` : String(live.length) }),
     el("span", { class: "spacer" }),
-    editable() ? el("button", { class: "icon-btn", "data-act": "edit-column", "data-id": column.id, "aria-label": "列表设置" }, glyph("settings")) : null,
+    editable() ? el("button", { class: "icon-btn icon-btn-sm", "data-act": "edit-column", "data-id": column.id, "aria-label": "列表设置" }, glyph("settings")) : null,
   );
   const body = el("div", { class: "column-cards" });
   for (const card of cards) body.append(cardNode(card, column));
@@ -527,34 +547,47 @@ function columnNode(column) {
         el("input", { type: "hidden", name: "column_id", value: column.id }),
         el("button", { class: "btn-primary btn-tiny", text: "添加" }),
       ));
-    } else node.append(el("button", { class: "btn-tiny", "data-act": "compose", "data-column": column.id, text: "添加卡片" }));
+    } else node.append(el("button", { class: "add-card", "data-act": "compose", "data-column": column.id }, glyph("plus"), el("span", { text: "添加卡片" })));
   }
   return node;
 }
 
-function cardNode(card, column) {
-  const due = dueInfo(card.due_on);
-  const node = el("article", { class: `card${card.done ? " is-done" : ""}${card.archived ? " is-archived" : ""}`, "data-drag": "card", "data-id": card.id, "data-column": column.id });
-  node.style.setProperty("--c", safeColor(card.cover_color || priorityColor(card.priority), "transparent"));
-  const labels = state.board.labels.filter((label) => card.label_ids.includes(label.id));
-  node.append(el("h3", { class: "card-title", text: card.title }));
-  if (labels.length) node.append(el("div", { class: "pills" }, ...labels.map((label) => {
-    const pill = el("span", { class: "pill", text: label.name });
-    pill.style.background = safeColor(label.color);
-    return pill;
-  })));
-  const foot = el("div", { class: "card-foot" });
-  if (due) foot.append(el("span", { class: due.over || due.today ? "due is-over" : "due", text: due.text }));
-  if (card.checklist.total) foot.append(el("span", { text: `${card.checklist.done}/${card.checklist.total}` }));
-  if (card.comment_count) foot.append(el("span", { text: `${card.comment_count} 评` }));
-  const people = state.board.members.filter((person) => card.assignee_ids.includes(person.id));
-  foot.append(el("span", { class: "spacer" }), ...people.slice(0, 3).map((person) => avatar(person)));
-  node.append(foot);
-  return node;
+const PRIORITY_ACCENT = { low: "#5aa7c8", medium: "#e0a15a", high: "#8b72ff", urgent: "#ff73ba" };
+
+function priorityLabel(priority) {
+  return PRIORITIES.find(([value]) => value === priority)?.[1] || "";
 }
 
-function priorityColor(priority) {
-  return { low: "#3D6B8A", medium: "#C47B2B", high: "#D63A56", urgent: "#8A4B5A" }[priority] || "transparent";
+function metaBit(name, text, extra = "") {
+  return el("span", { class: extra ? `meta-bit ${extra}` : "meta-bit" }, glyph(name), text);
+}
+
+function cardNode(card, column) {
+  const due = dueInfo(card.due_on);
+  const accent = /^#[0-9A-Fa-f]{6}$/.test(card.cover_color || "") ? card.cover_color : (PRIORITY_ACCENT[card.priority] || "");
+  const node = el("article", {
+    class: `card${card.done ? " is-done" : ""}${card.archived ? " is-archived" : ""}${accent ? " has-mark" : ""}`,
+    "data-drag": "card",
+    "data-id": card.id,
+    "data-column": column.id,
+  });
+  if (accent) node.style.setProperty("--c", accent);
+  const labels = state.board.labels.filter((label) => card.label_ids.includes(label.id));
+  const head = el("div", { class: "card-head" }, el("h3", { class: "card-title", text: card.title }));
+  if (card.priority && card.priority !== "none") head.append(el("span", { class: `prio-mark prio-${card.priority}`, text: priorityLabel(card.priority) }));
+  node.append(head);
+  if (labels.length) node.append(el("div", { class: "pills" }, ...labels.map((label) => {
+    const pill = el("span", { class: "pill", text: label.name });
+    pill.style.setProperty("--c", safeColor(label.color));
+    return pill;
+  })));
+  const bits = [];
+  if (due) bits.push(metaBit("calendar", due.text, due.over ? "due is-over" : due.today ? "due is-today" : "due"));
+  if (card.checklist.total) bits.push(metaBit("check", `${card.checklist.done}/${card.checklist.total}`));
+  if (card.comment_count) bits.push(metaBit("comment", String(card.comment_count)));
+  const people = state.board.members.filter((person) => card.assignee_ids.includes(person.id)).slice(0, 3);
+  if (bits.length || people.length) node.append(el("div", { class: "card-foot" }, ...bits, el("span", { class: "spacer" }), ...people.map((person) => avatar(person))));
+  return node;
 }
 
 function tasksView() {
@@ -565,17 +598,18 @@ function tasksView() {
   ];
   return el("section", {},
     el("div", { class: "page-head" }, el("div", {}, el("h2", { text: "我的任务" }), el("p", { text: "指派给你、尚未归档的卡片。" }))),
-    ...groups.map(([title, cards]) => el("div", { class: "section" }, el("h3", { text: title }), cards.length ? el("div", {}, ...cards.map(taskRow)) : el("p", { class: "muted", text: "没有" }))),
+    ...groups.map(([title, cards]) => el("div", { class: "section task-group" }, el("h3", { text: title }), cards.length ? el("div", { class: "task-list" }, ...cards.map(taskRow)) : el("p", { class: "muted", text: "没有" }))),
   );
 }
 
 function taskRow(card) {
   const due = dueInfo(card.due_on);
-  return el("button", { class: "task list-row", "data-act": "open-task", "data-id": card.id, "data-project": card.project_id },
-    el("i", { class: "dot", style: `--c:${safeColor(card.project_color)}` }),
-    el("strong", { text: card.title }),
-    el("span", { class: "muted", text: `${card.project_name} · ${card.column_name}` }),
-    due ? el("span", { class: due.over ? "due is-over" : "muted", text: due.text }) : null,
+  const mark = el("i", { class: "task-mark" });
+  mark.style.setProperty("--c", safeColor(card.project_color));
+  return el("button", { class: "task", "data-act": "open-task", "data-id": card.id, "data-project": card.project_id },
+    mark,
+    el("span", { class: "task-main" }, el("strong", { text: card.title }), el("span", { class: "muted", text: `${card.project_name} · ${card.column_name}` })),
+    due ? el("span", { class: due.over ? "due is-over" : due.today ? "due is-today" : "muted", text: due.text }) : null,
   );
 }
 
@@ -585,20 +619,34 @@ function notesView() {
       el("div", {}, el("h2", { text: "通知" }), el("p", { text: "邀请需要你批准后才会加入项目。" })),
       el("button", { class: "btn-ghost", "data-act": "read-all", text: "全部已读" }),
     ),
-    state.notes.length ? el("div", {}, ...state.notes.map(noteRow)) : el("div", { class: "empty" }, el("strong", { text: "没有新消息" })),
+    state.notes.length ? el("div", { class: "note-list" }, ...state.notes.map(noteRow)) : emptyState("没有新消息"),
   );
 }
 
 function noteRow(note) {
   const pending = note.type === "project_invite" && note.status === "pending";
-  return el("article", { class: "note" },
-    el("header", {}, note.actor ? avatar(note.actor) : glyph("bell"), el("strong", { text: note.title }), el("span", { class: "muted", text: relative(note.created_at) })),
-    el("p", { text: note.body }),
-    pending ? el("div", { class: "row" },
-      el("button", { class: "btn-primary btn-tiny", "data-act": "accept", "data-id": note.id, text: "批准" }),
-      el("button", { class: "btn-ghost btn-tiny", "data-act": "reject", "data-id": note.id, text: "拒绝" }),
-    ) : el("span", { class: "muted", text: { accepted: "已接受", rejected: "已拒绝", cancelled: "已撤回", info: "" }[note.status] || "" }),
+  return el("article", { class: note.read ? "note" : "note is-unread" },
+    el("i", { class: "note-dot" }),
+    el("div", { class: "note-main" },
+      el("header", {}, note.actor ? avatar(note.actor) : glyph("bell"), el("strong", { text: note.title }), el("span", { class: "muted", text: relative(note.created_at) })),
+      note.body ? el("p", { text: note.body }) : null,
+      pending ? el("div", { class: "row" },
+        el("button", { class: "btn-primary btn-tiny", "data-act": "accept", "data-id": note.id, text: "批准" }),
+        el("button", { class: "btn-ghost btn-tiny", "data-act": "reject", "data-id": note.id, text: "拒绝" }),
+      ) : el("span", { class: "muted", text: { accepted: "已接受", rejected: "已拒绝", cancelled: "已撤回", info: "" }[note.status] || "" }),
+    ),
   );
+}
+
+function activityList(items) {
+  if (!items?.length) return el("p", { class: "muted", text: "还没有动态" });
+  return el("div", { class: "timeline" }, ...items.map((item) => el("div", { class: "tl-item" },
+    el("i", { class: "tl-dot" }),
+    el("div", {},
+      el("div", { class: "tl-text" }, el("strong", { text: item.user?.display_name || "有人" }), " ", ACTIONS[item.action] || item.action, item.detail?.title ? `「${item.detail.title}」` : ""),
+      el("div", { class: "muted", text: relative(item.created_at) }),
+    ),
+  )));
 }
 
 function settingsView() {
@@ -607,62 +655,72 @@ function settingsView() {
   const admin = canAdmin(data.role);
   const owner = data.role === "owner";
   return el("section", { class: "settings-grid" },
-    el("div", {},
-      el("h2", { text: data.project.name }),
-      admin ? el("form", { "data-form": "project-save" },
-        el("label", { class: "field" }, "名称", el("input", { name: "name", value: data.project.name, required: true })),
-        el("label", { class: "field" }, "简介", el("textarea", { name: "description", text: data.project.description })),
-        colorPicker(data.project.color),
-        el("button", { class: "btn-primary", text: "保存项目" }),
-      ) : el("p", { text: data.project.description || "没有简介" }),
-      el("div", { class: "section" }, el("h3", { text: "成员" }), ...data.members.map((person) => memberRow(person, data))),
-      admin ? el("form", { class: "section", "data-form": "invite" },
+    el("div", { class: "settings-main" },
+      el("div", { class: "page-head" }, el("div", {}, el("h2", { text: "项目设置" }), el("p", { text: data.project.name }))),
+      el("div", { class: "settings-block" },
+        el("h3", { text: "常规" }),
+        admin ? el("form", { "data-form": "project-save" },
+          el("label", { class: "field" }, "名称", el("input", { name: "name", value: data.project.name, required: true })),
+          el("label", { class: "field" }, "简介", el("textarea", { name: "description", text: data.project.description })),
+          el("div", { class: "field" }, "颜色", colorPicker(data.project.color)),
+          el("button", { class: "btn-primary", text: "保存项目" }),
+        ) : el("p", { text: data.project.description || "没有简介" }),
+      ),
+      el("div", { class: "settings-block" }, el("h3", { text: "成员" }), el("div", { class: "member-list" }, ...data.members.map((person) => memberRow(person, data)))),
+      admin ? el("form", { class: "settings-block", "data-form": "invite" },
         el("h3", { text: "邀请" }),
         el("label", { class: "field" }, "对方邮箱", el("input", { name: "email", type: "email", placeholder: "已注册的邮箱", required: true })),
         el("label", { class: "field" }, "角色", el("select", { name: "role" }, el("option", { value: "member", text: "成员" }), el("option", { value: "admin", text: "管理员" }), el("option", { value: "viewer", text: "只读" }))),
         el("button", { class: "btn-primary", text: "发送站内邀请" }),
       ) : null,
-      data.invites?.length ? el("div", { class: "section" }, el("h3", { text: "等待批准" }), ...data.invites.map((invite) => el("div", { class: "list-row row" }, el("span", { text: `${invite.display_name} · ${invite.email}` }), el("button", { class: "btn-tiny", "data-act": "cancel-invite", "data-id": invite.id, text: "撤回" })))) : null,
-      el("div", { class: "danger-zone" },
-        owner ? null : el("button", { class: "btn-ghost", "data-act": "leave", text: "退出项目" }),
-        admin ? el("button", { class: "btn-ghost", "data-act": data.project.archived ? "restore-project" : "archive-project", text: data.project.archived ? "恢复项目" : "归档项目" }) : null,
-        owner ? el("button", { class: "btn-danger", "data-act": "delete-project", text: "删除项目" }) : null,
+      data.invites?.length ? el("div", { class: "settings-block" }, el("h3", { text: "等待批准" }), el("div", { class: "invite-list" }, ...data.invites.map((invite) => el("div", { class: "invite-row" }, el("span", { text: `${invite.display_name} · ${invite.email}` }), el("span", { class: "spacer" }), el("button", { class: "btn-tiny", "data-act": "cancel-invite", "data-id": invite.id, text: "撤回" }))))) : null,
+      el("div", { class: "settings-block" },
+        el("div", { class: "danger-zone" },
+          el("h3", { text: "危险操作" }),
+          owner ? null : el("button", { class: "btn-ghost", "data-act": "leave", text: "退出项目" }),
+          admin ? el("button", { class: "btn-ghost", "data-act": data.project.archived ? "restore-project" : "archive-project", text: data.project.archived ? "恢复项目" : "归档项目" }) : null,
+          owner ? el("button", { class: "btn-danger", "data-act": "delete-project", text: "删除项目" }) : null,
+        ),
       ),
     ),
-    el("div", {},
-      el("h3", { text: "动态" }),
-      ...state.activity.slice(0, 30).map((item) => el("div", { class: "list-row" }, el("strong", { text: item.user?.display_name || "有人" }), " ", ACTIONS[item.action] || item.action, item.detail?.title ? `「${item.detail.title}」` : "", el("div", { class: "muted", text: relative(item.created_at) }))),
-    ),
+    el("aside", { class: "settings-side" }, el("h3", { text: "动态" }), activityList(state.activity.slice(0, 30))),
   );
 }
 
 function memberRow(person, data) {
   const admin = canAdmin(data.role);
-  return el("div", { class: "member-row row" },
+  const mine = person.id === state.user.id;
+  return el("div", { class: "member-row" },
     avatar(person),
-    el("div", {}, el("strong", { text: person.display_name }), el("div", { class: "muted", text: person.email })),
-    el("span", { class: "spacer" }),
-    person.role === "owner" ? el("span", { text: "拥有者" }) : admin && person.id !== state.user.id ? el("select", { "data-act": "role", "data-id": person.id }, ...["admin", "member", "viewer"].map((role) => el("option", { value: role, text: ROLES[role], selected: person.role === role }))) : el("span", { text: ROLES[person.role] }),
-    data.role === "owner" && person.id !== state.user.id ? el("button", { class: "btn-tiny", "data-act": "transfer", "data-id": person.id, text: "移交" }) : null,
-    admin && person.role !== "owner" && person.id !== state.user.id ? el("button", { class: "btn-tiny", "data-act": "remove-member", "data-id": person.id, text: "移除" }) : null,
+    el("div", { class: "member-main" }, el("strong", { text: person.display_name }), el("div", { class: "muted", text: person.email })),
+    el("div", { class: "member-actions" },
+      person.role === "owner" ? el("span", { class: "role-label", text: "拥有者" }) : admin && !mine ? el("select", { class: "role-select", "data-act": "role", "data-id": person.id }, ...["admin", "member", "viewer"].map((role) => el("option", { value: role, text: ROLES[role], selected: person.role === role }))) : el("span", { class: "role-label", text: ROLES[person.role] }),
+      data.role === "owner" && !mine ? el("button", { class: "btn-tiny", "data-act": "transfer", "data-id": person.id, text: "移交" }) : null,
+      admin && person.role !== "owner" && !mine ? el("button", { class: "btn-tiny btn-danger", "data-act": "remove-member", "data-id": person.id, text: "移除" }) : null,
+    ),
   );
 }
 
 function accountView() {
-  return el("section", {},
-    el("div", { class: "page-head" }, el("h2", { text: "账号" })),
-    el("form", { "data-form": "account" },
+  return el("section", { class: "account-page" },
+    el("div", { class: "page-head" }, el("div", {}, el("h2", { text: "账号" }), el("p", { text: "资料、密码和当前会话。" }))),
+    el("div", { class: "account-id" }, avatar(state.user, "lg"), el("div", {}, el("strong", { text: state.user.display_name }), el("span", { class: "readonly", text: state.user.email }))),
+    el("form", { class: "account-block", "data-form": "account" },
+      el("h3", { text: "资料" }),
       el("label", { class: "field" }, "显示名", el("input", { name: "display_name", value: state.user.display_name, required: true })),
       el("div", { class: "field" }, "头像颜色", colorPicker(state.user.avatar_color)),
       el("button", { class: "btn-primary", text: "保存" }),
     ),
-    el("form", { class: "section", "data-form": "password" },
-      el("h3", { text: "修改密码" }),
-      el("label", { class: "field" }, "当前密码", el("input", { name: "current_password", type: "password", required: true })),
-      el("label", { class: "field" }, "新密码", el("input", { name: "new_password", type: "password", required: true, minlength: "8" })),
+    el("form", { class: "account-block", "data-form": "password" },
+      el("h3", { text: "安全" }),
+      el("label", { class: "field" }, "当前密码", el("input", { name: "current_password", type: "password", required: true, autocomplete: "current-password" })),
+      el("label", { class: "field" }, "新密码", el("input", { name: "new_password", type: "password", required: true, minlength: "8", autocomplete: "new-password" })),
       el("button", { class: "btn-ghost", text: "更新密码" }),
     ),
-    el("button", { class: "btn-danger section", "data-act": "logout", text: "退出登录" }),
+    el("div", { class: "account-block" },
+      el("h3", { text: "会话" }),
+      el("button", { class: "btn-danger", "data-act": "logout", text: "退出登录" }),
+    ),
   );
 }
 
@@ -684,40 +742,68 @@ function paintDrawer() {
   const card = data.card;
   const edit = card.can_edit;
   const scroll = drawer.querySelector(".drawer-panel")?.scrollTop || 0;
+  const labels = state.board?.labels || [];
+  const members = state.board?.members || [];
   drawer.hidden = false;
   drawer.replaceChildren(
     el("button", { class: "drawer-backdrop", "data-act": "close-drawer", "aria-label": "关闭" }),
     el("article", { class: "drawer-panel" },
-      el("div", { class: "drawer-top" }, el("span", { class: "muted", text: columnName(card.column_id) }), el("button", { class: "icon-btn", "data-act": "close-drawer", "aria-label": "关闭" }, glyph("close"))),
-      edit ? el("input", { class: "card-title", "data-save": "title", value: card.title }) : el("h2", { text: card.title }),
-      el("div", { class: "section" }, el("h3", { text: "优先级" }), el("div", { class: "prio" }, ...PRIORITIES.map(([value, label]) => el("button", { type: "button", class: card.priority === value ? "is-on" : "", "data-act": "priority", "data-value": value, disabled: !edit, text: label })))),
-      el("div", { class: "row section" },
-        el("label", { class: "field" }, "截止日期", el("input", { type: "date", "data-save": "due", value: card.due_on || "", disabled: !edit })),
-        el("label", { class: "check" }, el("input", { type: "checkbox", "data-act": "done", checked: card.done, disabled: !edit }), "完成"),
+        el("div", { class: "drawer-top" },
+          el("i", { class: "sheet-handle", "aria-hidden": "true" }),
+          el("div", { class: "drawer-top-row" },
+            el("span", { class: "crumb", text: [state.board?.project?.name, columnName(card.column_id)].filter(Boolean).join(" / ") }),
+            el("button", { class: "icon-btn", "data-act": "close-drawer", "aria-label": "关闭" }, glyph("close")),
+          ),
+          edit ? el("input", { class: "drawer-title", "data-save": "title", value: card.title, "aria-label": "标题" }) : el("h2", { class: "drawer-title", text: card.title }),
+        ),
+      el("div", { class: "props" },
+        el("div", { class: "prop" },
+          el("span", { class: "prop-k", text: "优先级" }),
+          el("div", { class: "prio" }, ...PRIORITIES.map(([value, label]) => el("button", { type: "button", class: card.priority === value ? "is-on" : "", "data-act": "priority", "data-value": value, disabled: !edit, text: label }))),
+        ),
+        el("div", { class: "prop" },
+          el("span", { class: "prop-k", text: "截止日期" }),
+          el("label", { class: "field" }, el("input", { type: "date", "data-save": "due", value: card.due_on || "", disabled: !edit, "aria-label": "截止日期" })),
+        ),
+        el("div", { class: "prop" },
+          el("span", { class: "prop-k", text: "状态" }),
+          el("label", { class: "check" }, el("input", { type: "checkbox", "data-act": "done", checked: card.done, disabled: !edit }), "完成"),
+        ),
+        el("div", { class: "prop prop-top" },
+          el("span", { class: "prop-k", text: "指派" }),
+          el("div", { class: "assignees" }, ...members.map((person) => {
+            const on = card.assignee_ids.includes(person.id);
+            return el("button", { type: "button", class: on ? "assignee is-on" : "assignee", "data-act": "toggle-assignee", "data-id": person.id, disabled: !edit }, avatar(person), person.display_name);
+          })),
+        ),
+        el("div", { class: "prop" },
+          el("span", { class: "prop-k", text: "封面" }),
+          el("div", { class: "swatches" }, el("button", { type: "button", class: card.cover_color ? "swatch" : "swatch is-on", "data-act": "cover", "data-color": "", text: "无", disabled: !edit }), ...COLORS.map((color) => {
+            const button = el("button", { type: "button", class: card.cover_color === color ? "swatch is-on" : "swatch", "data-act": "cover", "data-color": color, disabled: !edit, "aria-label": color });
+            button.style.background = color;
+            return button;
+          })),
+        ),
       ),
-      el("div", { class: "section" }, el("h3", { text: "封面" }), el("div", { class: "swatches" }, el("button", { class: "swatch", "data-act": "cover", "data-color": "", text: "无" }), ...COLORS.map((color) => {
-        const button = el("button", { type: "button", class: card.cover_color === color ? "swatch is-on" : "swatch", "data-act": "cover", "data-color": color, disabled: !edit });
-        button.style.background = color;
-        return button;
-      }))),
-      el("div", { class: "section" }, el("h3", { text: "描述" }), edit ? el("textarea", { "data-save": "description", text: card.description || "" }) : markdown(card.description || "没有描述")),
-      el("div", { class: "section" }, el("h3", { text: "标签" }), el("div", { class: "pills" }, ...state.board.labels.map((label) => {
+      el("div", { class: "section" }, el("h3", { text: "描述" }), edit ? el("textarea", { class: "desc-input", "data-save": "description", text: card.description || "", "aria-label": "描述" }) : markdown(card.description || "没有描述")),
+      el("div", { class: "section" }, el("h3", { text: "标签" }), el("div", { class: "pills" }, ...labels.map((label) => {
         const on = card.label_ids.includes(label.id);
-        const button = el("button", { class: "pill", "data-act": "toggle-label", "data-id": label.id, disabled: !edit, text: on ? `✓ ${label.name}` : label.name });
-        button.style.background = safeColor(label.color);
-        button.style.opacity = on ? "1" : ".45";
+        const button = el("button", { type: "button", class: on ? "pill is-on" : "pill", "data-act": "toggle-label", "data-id": label.id, disabled: !edit, text: label.name });
+        button.style.setProperty("--c", safeColor(label.color));
         return button;
       })), edit ? el("form", { "data-form": "label", class: "composer" }, el("input", { name: "name", placeholder: "新标签", required: true }), el("button", { class: "btn-tiny", text: "添加" })) : null),
-      el("div", { class: "section" }, el("h3", { text: "指派" }), el("div", { class: "row" }, ...state.board.members.map((person) => {
-        const on = card.assignee_ids.includes(person.id);
-        const button = el("button", { class: "btn-tiny", "data-act": "toggle-assignee", "data-id": person.id, disabled: !edit }, avatar(person), person.display_name);
-        if (on) button.style.outline = "2px solid var(--ink)";
-        return button;
-      }))),
       el("div", { class: "section" }, el("h3", { text: "清单" }), ...data.checklists.map(checklistBlock), edit ? el("form", { "data-form": "checklist", class: "composer" }, el("input", { name: "title", placeholder: "清单标题", required: true }), el("button", { class: "btn-tiny", text: "添加" })) : null),
-      el("div", { class: "section" }, el("h3", { text: "附件" }), ...data.attachments.map(fileRow), edit ? el("input", { type: "file", "data-act": "upload" }) : null),
-      el("div", { class: "section" }, el("h3", { text: "评论" }), ...data.comments.map((comment) => el("article", { class: "comment" }, el("header", {}, comment.user ? avatar(comment.user) : null, el("strong", { text: comment.user?.display_name || "成员" }), el("span", { class: "muted", text: relative(comment.created_at) + (comment.edited ? " · 已编辑" : "") })), el("p", { text: comment.body }), comment.mine ? el("button", { class: "btn-tiny", "data-act": "delete-comment", "data-id": comment.id, text: "删除" }) : null)), edit ? el("form", { "data-form": "comment" }, el("textarea", { name: "body", placeholder: "写评论，用 @显示名 提及成员", required: true }), el("button", { class: "btn-primary btn-tiny", text: "发送" })) : null),
-      edit ? el("div", { class: "danger-zone" },
+      el("div", { class: "section" }, el("h3", { text: "附件" }), ...data.attachments.map(fileRow), edit ? el("input", { class: "file-input", type: "file", "data-act": "upload" }) : null),
+      el("div", { class: "section" },
+        el("h3", { text: "评论" }),
+        ...data.comments.map((comment) => el("article", { class: "comment" },
+          el("header", {}, comment.user ? avatar(comment.user) : null, el("strong", { text: comment.user?.display_name || "成员" }), el("span", { class: "muted", text: relative(comment.created_at) + (comment.edited ? " · 已编辑" : "") }), comment.mine ? el("button", { type: "button", class: "icon-btn icon-btn-sm check-remove", "data-act": "delete-comment", "data-id": comment.id, "aria-label": "删除评论" }, glyph("trash")) : null),
+          el("p", { text: comment.body }),
+        )),
+        edit ? el("form", { "data-form": "comment", class: "comment-form" }, el("textarea", { name: "body", placeholder: "写评论，用 @显示名 提及成员", required: true }), el("button", { class: "btn-primary btn-tiny", text: "发送" })) : null,
+      ),
+      el("div", { class: "section" }, el("h3", { text: "动态" }), activityList(data.activity)),
+      edit ? el("div", { class: "more-actions" },
         el("button", { class: "btn-ghost", "data-act": "duplicate", text: "复制" }),
         el("button", { class: "btn-ghost", "data-act": card.archived ? "restore-card" : "archive-card", text: card.archived ? "恢复" : "归档" }),
         el("button", { class: "btn-danger", "data-act": "delete-card", text: "删除" }),
@@ -734,18 +820,22 @@ function columnName(id) {
 
 function checklistBlock(list) {
   const done = list.items.filter((item) => item.done).length;
-  return el("div", { class: "list-row" },
-    el("strong", { text: `${list.title}  ${done}/${list.items.length}` }),
-    ...list.items.map((item) => el("label", { class: "check" }, el("input", { type: "checkbox", "data-act": "item", "data-id": item.id, checked: item.done, disabled: !state.detail.card.can_edit }), item.text, state.detail.card.can_edit ? el("button", { type: "button", class: "btn-tiny", "data-act": "delete-item", "data-id": item.id, text: "删" }) : null)),
-    state.detail.card.can_edit ? el("form", { "data-form": "item", class: "composer" }, el("input", { type: "hidden", name: "checklist_id", value: list.id }), el("input", { name: "text", placeholder: "清单项", required: true }), el("button", { class: "btn-tiny", text: "添加" })) : null,
+  const edit = state.detail.card.can_edit;
+  return el("div", { class: "checklist" },
+    el("div", { class: "checklist-head" }, el("strong", { text: list.title }), el("span", { class: "count", text: `${done}/${list.items.length}` })),
+    ...list.items.map((item) => el("div", { class: "check-item" },
+      el("label", { class: "check" }, el("input", { type: "checkbox", "data-act": "item", "data-id": item.id, checked: item.done, disabled: !edit }), el("span", { text: item.text })),
+      edit ? el("button", { type: "button", class: "icon-btn icon-btn-sm check-remove", "data-act": "delete-item", "data-id": item.id, "aria-label": "删除清单项" }, glyph("trash")) : null,
+    )),
+    edit ? el("form", { "data-form": "item", class: "composer" }, el("input", { type: "hidden", name: "checklist_id", value: list.id }), el("input", { name: "text", placeholder: "清单项", required: true }), el("button", { class: "btn-tiny", text: "添加" })) : null,
   );
 }
 
 function fileRow(file) {
   const row = el("div", { class: "attach" });
   if (file.image) row.append(el("img", { src: `/api/attachments/${file.id}/file`, alt: "" }));
-  row.append(el("a", { href: `/api/attachments/${file.id}/file`, text: file.filename }), el("span", { class: "muted", text: fileSize(file.size) }));
-  if (state.detail.card.can_edit) row.append(el("button", { class: "btn-tiny", "data-act": "delete-file", "data-id": file.id, text: "删除" }));
+  row.append(el("div", { class: "attach-meta" }, el("a", { href: `/api/attachments/${file.id}/file`, text: file.filename }), el("span", { class: "muted", text: fileSize(file.size) })));
+  if (state.detail.card.can_edit) row.append(el("button", { type: "button", class: "icon-btn icon-btn-sm check-remove", "data-act": "delete-file", "data-id": file.id, "aria-label": "删除附件" }, glyph("trash")));
   return row;
 }
 
@@ -763,11 +853,14 @@ function paintModal() {
     card.append(el("label", { class: "field" }, "名称", el("input", { name: "name", value: state.modal.name || "", required: true, "data-autofocus": "1" })));
     if (kind === "project") card.append(el("label", { class: "field" }, "简介", el("textarea", { name: "description" })));
     if (kind === "column") card.append(el("label", { class: "field" }, "在制品上限，可留空", el("input", { name: "wip_limit", type: "number", min: "1", max: "99", value: state.modal.wip || "" })));
-    card.append(colorPicker(state.modal.color || COLORS[0]));
+    card.append(el("div", { class: "field" }, "颜色", colorPicker(state.modal.color || COLORS[0])));
   }
   if (kind === "confirm") card.append(el("p", { text: state.modal.body }));
-  card.append(el("button", { type: "submit", class: kind === "confirm" ? "btn-danger" : "btn-primary", text: state.modal.ok || "确定" }));
-  if (state.modal.remove) card.append(el("button", { type: "button", class: "btn-danger", "data-act": "delete-column", "data-id": state.modal.id, text: "删除列表" }));
+  card.append(el("div", { class: "modal-foot" },
+    el("button", { type: "button", class: "btn-ghost", "data-act": "close-modal", text: "取消" }),
+    el("button", { type: "submit", class: kind === "confirm" ? "btn-danger" : "btn-primary", text: state.modal.ok || "确定" }),
+  ));
+  if (state.modal.remove) card.append(el("div", { class: "modal-extra" }, el("button", { type: "button", class: "btn-danger btn-tiny", "data-act": "delete-column", "data-id": state.modal.id, text: "删除列表" })));
   modal.replaceChildren(el("button", { class: "modal-backdrop", "data-act": "close-modal", "aria-label": "关闭" }), card);
 }
 
@@ -1080,6 +1173,7 @@ document.addEventListener("change", (event) => {
   if (node.id === "filter-label" || node.id === "filter-priority") {
     state.filters[node.id === "filter-label" ? "label" : "priority"] = node.value;
     paintCanvas();
+    paintFilterLock();
     return;
   }
   if (node.dataset.act === "role") {
@@ -1102,6 +1196,7 @@ document.addEventListener("input", (event) => {
   if (event.target.id === "board-search") {
     state.filters.q = event.target.value;
     paintCanvas();
+    paintFilterLock();
   }
 });
 

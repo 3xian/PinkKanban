@@ -17,6 +17,7 @@ const PATHS = {
   logout: '<path d="M10 7V5H5v14h5v-2"/><path d="M10 12h9M16 8l4 4-4 4"/>',
   arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>',
   tasks: '<path d="M8 7h11M8 12h11M8 17h11"/><path d="m4 7 .8.8L6.5 6M4 12l.8.8L6.5 11M4 17l.8.8 1.7-1.8"/>',
+  info: '<circle cx="12" cy="12" r="8"/><path d="M12 11v5M12 8h.01"/>',
 };
 
 export function icon(name) {
