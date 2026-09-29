@@ -9,11 +9,13 @@ from app.constants import SESSION_COOKIE, SESSION_DAYS
 from app.db import get_db
 from app.deps import current_user
 from app.limit import limit
+from app.mail import send_register_code
 from app.models import User
-from app.schemas import LoginIn, PasswordIn, ProfileIn, RegisterIn
+from app.schemas import EmailIn, LoginIn, PasswordIn, ProfileIn, RegisterIn
 from app.security import hash_password, sign_session, verify_password
 from app.serialize import iso, user_brief
 from app.services import create_user
+from app.verify import CODE_TTL, RESEND_WAIT, consume_code, issue_code
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 _dummy: str | None = None
@@ -44,11 +46,21 @@ def set_session(response: Response, user_id: int) -> None:
     )
 
 
+@router.post("/code")
+def send_code(body: EmailIn, request: Request, db: Session = Depends(get_db)):
+    limit(request, "code", 8, 3600)
+    if db.scalar(select(User).where(User.email == body.email)):
+        raise HTTPException(409, "该邮箱已注册")
+    code = issue_code(db, body.email)
+    send_register_code(body.email, code, minutes=CODE_TTL // 60)
+    return {"ok": True, "retry_after": RESEND_WAIT}
+
 @router.post("/register")
 def register(body: RegisterIn, request: Request, response: Response, db: Session = Depends(get_db)):
     limit(request, "register", 10, 3600)
     if db.scalar(select(User).where(User.email == body.email)):
         raise HTTPException(409, "该邮箱已注册")
+    consume_code(db, body.email, body.code)
     user = create_user(db, email=body.email, password_hash=hash_password(body.password), display_name=body.display_name)
     set_session(response, user.id)
     return profile(user)

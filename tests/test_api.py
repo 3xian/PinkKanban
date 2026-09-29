@@ -4,7 +4,10 @@ from datetime import date, timedelta
 
 
 def register(client, email, name="测试"):
-    response = client.post("/api/auth/register", json={"email": email, "password": "password1", "display_name": name})
+    sent = client.post("/api/auth/code", json={"email": email})
+    assert sent.status_code == 200, sent.text
+    from app.mail import captured_code
+    response = client.post("/api/auth/register", json={"email": email, "password": "password1", "display_name": name, "code": captured_code(email)})
     assert response.status_code == 200, response.text
     return response.json()
 
@@ -24,6 +27,47 @@ def test_auth_and_header(client):
     logged = client.post("/api/auth/login", json={"email": "a@example.com", "password": "password1"})
     assert logged.status_code == 200
     assert client.post("/api/auth/login", json={"email": "a@example.com", "password": "wrong-password"}).status_code == 401
+
+
+def test_register_requires_email_code(client):
+    from datetime import datetime
+
+    from app.db import session_factory
+    from app.mail import captured_code
+    from app.models import EmailCode, utcnow
+
+    body = {"email": "c@example.com", "password": "password1", "display_name": "丙", "code": "000000"}
+    assert client.post("/api/auth/register", json=body).status_code == 400
+    sent = client.post("/api/auth/code", json={"email": "c@example.com"})
+    assert sent.status_code == 200
+    assert sent.json()["retry_after"] == 60
+    assert client.post("/api/auth/code", json={"email": "c@example.com"}).status_code == 429
+    real = captured_code("c@example.com")
+    wrong = "000000" if real != "000000" else "111111"
+    assert client.post("/api/auth/register", json={**body, "code": wrong}).status_code == 400
+    db = session_factory()()
+    row = db.get(EmailCode, "c@example.com")
+    row.sent_at = utcnow() - timedelta(seconds=120)
+    row.expires_at = datetime(2000, 1, 1)
+    db.commit()
+    db.close()
+    assert client.post("/api/auth/register", json={**body, "code": real}).status_code == 400
+    user = register(client, "c@example.com", "丙")
+    assert user["email"] == "c@example.com"
+    assert client.post("/api/auth/code", json={"email": "c@example.com"}).status_code == 409
+
+
+def test_register_code_locks_after_misses(client):
+    from app.mail import captured_code
+
+    email = "lock@example.com"
+    assert client.post("/api/auth/code", json={"email": email}).status_code == 200
+    real = captured_code(email)
+    wrong = "000000" if real != "000000" else "111111"
+    body = {"email": email, "password": "password1", "display_name": "锁", "code": wrong}
+    for _ in range(5):
+        assert client.post("/api/auth/register", json=body).status_code == 400
+    assert client.post("/api/auth/register", json={**body, "code": real}).status_code == 400
 
 
 def test_project_board_and_quota(client):

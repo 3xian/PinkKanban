@@ -25,6 +25,7 @@ const state = {
   compose: null,
   dragging: false,
   authMode: "login",
+  codeWait: 0,
   color: COLORS[0],
   pendingCard: null,
 };
@@ -190,7 +191,11 @@ function closeDrawer() {
 }
 
 function render() {
-  app.replaceChildren(state.user ? shell() : authView());
+  const authed = Boolean(state.user);
+  document.body.classList.toggle("is-auth", !authed);
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", authed ? "#161311" : "#080b12");
+  app.replaceChildren(authed ? shell() : authView());
+  if (!authed) startAuthMotion(app.querySelector(".auth"));
   paintBadges();
   if (state.cardId) paintDrawer();
   else drawer.hidden = true;
@@ -200,41 +205,145 @@ function render() {
 
 function authView() {
   const login = state.authMode === "login";
+  const count = window.innerWidth < 760 ? 8 : 18;
   return el("div", { class: "auth" },
-    el("section", { class: "auth-hero" },
-      el("div", { class: "brand" }, mark(), "看板"),
-      el("div", { class: "hero-copy" },
-        el("h1", { text: "把事情，排成看得见的秩序。" }),
-        el("p", { text: "只用邮箱注册。邀请同伴进项目，对方在站内批准后，一起推进。" }),
-        el("div", { class: "hero-board" }, mini("待办", 2), mini("进行中", 1), mini("完成", 1, true)),
+    el("div", { class: "auth-glow" }),
+    el("div", { class: "auth-scene" },
+      el("div", { class: "auth-world" },
+        el("div", { class: "auth-orb" }),
+        el("div", { class: "auth-orb o2" }),
+        ...spacePositions(count).map((pos, index) => spaceBoard(index, pos)),
       ),
     ),
-    el("section", { class: "auth-panel" },
-      el("form", { class: "auth-card", "data-form": "auth" },
-        el("div", { class: "brand" }, mark(), "看板"),
-        el("h2", { text: login ? "欢迎回来" : "创建账号" }),
-        el("p", { class: "lede", text: "没有手机号，没有第三方登录。邮箱就是账号。" }),
-        el("div", { class: "seg" },
-          el("button", { type: "button", class: login ? "is-on" : "", "data-act": "auth-mode", "data-mode": "login", text: "登录" }),
-          el("button", { type: "button", class: login ? "" : "is-on", "data-act": "auth-mode", "data-mode": "register", text: "注册" }),
-        ),
-        field("邮箱", "email", "email", "you@example.com"),
-        login ? null : field("显示名", "display_name", "text", "怎么称呼你"),
-        field("密码", "password", "password", login ? "你的密码" : "至少 8 位"),
-        el("button", { class: "btn-primary btn-block", type: "submit", text: login ? "进入看板" : "用邮箱注册" }),
+    el("div", { class: "auth-vignette" }),
+    el("div", { class: "auth-noise" }),
+    el("header", { class: "auth-bar" },
+      el("div", { class: "auth-brand" }, el("span", { class: "auth-dot" }), "看板", el("small", { text: "邮箱账号" })),
+    ),
+    el("form", { class: "auth-card", "data-form": "auth" },
+      el("h2", { text: login ? "欢迎回来" : "创建账号" }),
+      el("p", { class: "lede", text: login ? "从上次停下的地方继续。" : "验证码会发到这个邮箱，10 分钟内有效。" }),
+      el("div", { class: "seg" },
+        el("button", { type: "button", class: login ? "is-on" : "", "data-act": "auth-mode", "data-mode": "login", text: "登录" }),
+        el("button", { type: "button", class: login ? "" : "is-on", "data-act": "auth-mode", "data-mode": "register", text: "注册" }),
       ),
+      field("邮箱", "email", "email", "you@example.com"),
+      login ? null : codeField(),
+      login ? null : field("显示名", "display_name", "text", "怎么称呼你"),
+      field("密码", "password", "password", login ? "你的密码" : "至少 8 位"),
+      el("button", { class: "btn-primary btn-block", type: "submit", text: login ? "进入看板" : "用邮箱注册" }),
+    ),
+    el("div", { class: "auth-hint", text: "MOVE · SCROLL · EXPLORE" }),
+  );
+}
+
+const SPACE_TITLES = ["产品发布", "设计系统", "增长冲刺", "移动端", "研究笔记", "上线清单", "品牌刷新", "数据分析"];
+const SPACE_TASKS = ["梳理路径", "补齐状态", "同步变量", "准备素材", "修复边缘", "定义指标"];
+const SPACE_ACCENTS = ["#8b7cff", "#55d9ff", "#ff73ba", "#65e6b6", "#ffba6a"];
+
+function seeded(n) {
+  const x = Math.sin(n * 12.9898) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+function spacePositions(count) {
+  const positions = [];
+  for (let i = 0; i < count; i += 1) {
+    const ring = i < 8 ? 1 : i < 14 ? 2 : 3;
+    const angle = i * 0.91 + ring * 0.42;
+    let x = Math.cos(angle) * (420 + ring * 230 + seeded(i + 1) * 150);
+    let y = Math.sin(angle * 1.11) * (220 + ring * 120 + seeded(i + 5) * 100);
+    if (i % 6 === 0) x *= 0.72;
+    if (i % 8 === 0) y *= 0.68;
+    positions.push({
+      x, y, z: -220 - ring * 280 + seeded(i + 9) * 460,
+      rx: -8 + seeded(i + 2) * 18,
+      ry: -22 + seeded(i + 4) * 44,
+      rz: -7 + seeded(i + 8) * 14,
+      scale: (0.78 + seeded(i + 6) * 0.34).toFixed(2),
+      delay: (-i * 0.27).toFixed(2),
+      drift: 12 + Math.floor(seeded(i + 3) * 22),
+    });
+  }
+  return positions.sort((a, b) => a.z - b.z);
+}
+
+function spaceBoard(index, pos) {
+  const accent = SPACE_ACCENTS[index % SPACE_ACCENTS.length];
+  const board = el("article", {
+    class: "space-board",
+    style: `--x:${pos.x}px;--y:${pos.y}px;--z:${pos.z}px;--rx:${pos.rx}deg;--ry:${pos.ry}deg;--rz:${pos.rz}deg;--scale:${pos.scale};--delay:${pos.delay}s;--drift:${pos.drift}px`,
+  },
+    el("div", { class: "space-head" },
+      el("div", { class: "space-title", text: SPACE_TITLES[index % SPACE_TITLES.length] }),
+      el("div", { class: "space-meta" }, el("span", { class: "space-faces" }, el("i"), el("i"), el("i")), el("span", { text: String(3 + (index % 5)) })),
+    ),
+    el("div", { class: "space-cols" },
+      ...["待办", "进行", "完成"].map((name, column) => el("div", { class: "space-col" },
+        el("div", { class: "space-col-head" }, el("span", { text: name }), el("span", { text: String(1 + ((index + column) % 3)) })),
+        spaceTask(index * 3 + column, accent),
+      )),
     ),
   );
+  board.style.opacity = String(Math.max(0.28, Math.min(0.94, 1 - Math.abs(pos.z) / 2200)));
+  return board;
+}
+
+function spaceTask(index, accent) {
+  const progress = 24 + Math.floor(seeded(index * 3.17) * 72);
+  return el("div", { class: "space-task", style: `--accent:${accent};--p:${progress}%` },
+    el("div", { class: "space-task-title", text: SPACE_TASKS[index % SPACE_TASKS.length] }),
+    el("div", { class: "space-progress" }, el("span")),
+  );
+}
+
+let authMotion = 0;
+let spaceX = 0;
+let spaceY = 0;
+let spaceZ = 0;
+let spaceTargetX = 0;
+let spaceTargetY = 0;
+let spaceTargetZ = 0;
+
+function startAuthMotion(root) {
+  cancelAnimationFrame(authMotion);
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const glow = root.querySelector(".auth-glow");
+  const onMove = (event) => {
+    spaceTargetX = (event.clientX / innerWidth - 0.5) * 2;
+    spaceTargetY = (event.clientY / innerHeight - 0.5) * 2;
+    if (glow) {
+      glow.style.left = `${event.clientX}px`;
+      glow.style.top = `${event.clientY}px`;
+    }
+  };
+  const onWheel = (event) => {
+    if (!root.isConnected || event.target.closest(".auth-card")) return;
+    spaceTargetZ = Math.max(-2.2, Math.min(2.2, spaceTargetZ + event.deltaY * 0.0015));
+  };
+  window.addEventListener("pointermove", onMove);
+  window.addEventListener("wheel", onWheel, { passive: true });
+  const tick = () => {
+    if (!root.isConnected) {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("wheel", onWheel);
+      return;
+    }
+    if (!reduce) {
+      spaceX += (spaceTargetX - spaceX) * 0.055;
+      spaceY += (spaceTargetY - spaceY) * 0.055;
+      spaceZ += (spaceTargetZ - spaceZ) * 0.06;
+      root.style.setProperty("--mx", spaceX.toFixed(4));
+      root.style.setProperty("--my", spaceY.toFixed(4));
+      root.style.setProperty("--scroll", spaceZ.toFixed(4));
+    }
+    authMotion = requestAnimationFrame(tick);
+  };
+  authMotion = requestAnimationFrame(tick);
 }
 
 function mark() {
   return el("span", { class: "mark", "aria-hidden": "true" }, el("i"), el("i"), el("i"));
-}
-
-function mini(title, count, rose = false) {
-  const col = el("div", { class: "mini-col" }, el("b", { text: title }));
-  for (let i = 0; i < count; i += 1) col.append(el("div", { class: rose && i === 0 ? "mini-card short" : "mini-card" }));
-  return col;
 }
 
 function field(label, name, type, placeholder) {
@@ -666,6 +775,21 @@ const clicks = {
   "auth-mode"(node) {
     state.authMode = node.dataset.mode;
     render();
+  },
+  "send-code"(node) {
+    const email = node.closest("form")?.email?.value?.trim() || "";
+    if (!email) {
+      toast("请先填写邮箱");
+      return;
+    }
+    node.disabled = true;
+    api("/api/auth/code", { method: "POST", body: { email } }).then((data) => {
+      toast("验证码已发送");
+      startCodeWait(data.retry_after || 60);
+    }).catch((error) => {
+      toast(error.message || "请求失败");
+      node.disabled = state.codeWait > 0;
+    });
   },
   nav(node) {
     state.sidebar = false;

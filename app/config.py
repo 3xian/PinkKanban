@@ -49,3 +49,39 @@ def daily_project_limit() -> int:
 
 def secure_cookie() -> bool:
     return os.environ.get("APP_SECURE_COOKIE", "0") == "1"
+
+
+def smtp_host() -> str:
+    return os.environ.get("SMTP_HOST", "").strip()
+
+
+def smtp_port() -> int:
+    raw = os.environ.get("SMTP_PORT", "587")
+    try:
+        return int(raw)
+    except ValueError:
+        return 587
+
+
+def smtp_user() -> str:
+    return os.environ.get("SMTP_USER", "")
+
+
+def smtp_password() -> str:
+    return os.environ.get("SMTP_PASSWORD", "")
+
+
+def smtp_from() -> str:
+    return os.environ.get("SMTP_FROM", "").strip() or smtp_user()
+
+
+def smtp_ssl() -> bool:
+    return os.environ.get("SMTP_SSL", "0") == "1"
+
+
+def smtp_starttls() -> bool:
+    return os.environ.get("SMTP_TLS", "1") != "0"
+
+
+def mail_capture() -> bool:
+    return os.environ.get("MAIL_CAPTURE") == "1"

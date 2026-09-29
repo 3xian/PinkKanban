@@ -1,6 +1,6 @@
 # PinkKanban
 
-邮箱注册的多人看板。一个项目一块板，成员通过站内邀请加入：邀请发出后必须由对方在通知里批准，才会真正成为项目成员。
+邮箱注册的多人看板。注册时向邮箱发送 6 位验证码，通过后才能创建账号。一个项目一块板，成员通过站内邀请加入：邀请发出后必须由对方在通知里批准，才会真正成为项目成员。
 
 后端 FastAPI + SQLAlchemy 2 + MariaDB，前端是无构建步骤的原生 ES Module + CSS，没有打包器、没有 Node 依赖。
 
@@ -91,6 +91,13 @@ run.bat
 | `APP_TIMEZONE` | `Asia/Shanghai` | 决定每日建项目配额的自然日边界 |
 | `DAILY_PROJECT_LIMIT` | `30` | 非整数回退 30，最小 1 |
 | `APP_SECURE_COOKIE` | `0` | 置 `1` 给会话 Cookie 加 `Secure`，仅在 HTTPS 下开启 |
+| `SMTP_HOST` | 空 | 发注册验证码的 SMTP 主机；为空时发送接口返回 503 |
+| `SMTP_PORT` | `587` | SMTP 端口 |
+| `SMTP_USER` | 空 | SMTP 登录用户 |
+| `SMTP_PASSWORD` | 空 | SMTP 登录口令 |
+| `SMTP_FROM` | 同 `SMTP_USER` | 发件人地址 |
+| `SMTP_SSL` | `0` | 置 `1` 使用隐式 SSL（常见于 465） |
+| `SMTP_TLS` | `1` | 非 SSL 时是否 STARTTLS；`0` 关闭 |
 
 ## API
 
@@ -100,7 +107,8 @@ run.bat
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| POST | `/api/auth/register` `/login` `/logout` | 注册/登录/登出 |
+| POST | `/api/auth/register` `/login` `/logout` | 注册/登录/登出。注册必须带 6 位邮箱验证码 |
+| POST | `/api/auth/code` | 向未注册邮箱发送验证码 |
 | GET PATCH | `/api/auth/me` | 读取/更新自己的资料 |
 | POST | `/api/auth/password` | 修改密码 |
 | GET | `/api/bootstrap` | 一次性拿用户、项目列表、未读数、配额 |
@@ -153,7 +161,7 @@ run.bat
 
 附件类型白名单见 `constants.ALLOWED_EXTENSIONS`。文件名只用于展示，落盘名是随机 hex + 原扩展名，存 `uploads/`；删除时由 `defer_unlink` 在事务提交成功后才删磁盘文件，回滚不会留下悬空引用。
 
-接口级限流在进程内存中按来源 IP 计数（`limit.py`）：注册 10 次/小时、登录 20 次/10 分钟、邮箱查询 30 次/分钟。多实例部署时这些计数不共享，需要换成 Redis 之类的共享存储。
+接口级限流在进程内存中按来源 IP 计数（`limit.py`）：注册 10 次/小时、登录 20 次/10 分钟、邮箱查询 30 次/分钟、验证码 8 次/小时。同一邮箱 60 秒内不能重复获取验证码；验证码 10 分钟内有效，连续错 5 次作废。多实例部署时这些计数不共享，需要换成 Redis 之类的共享存储。
 
 ## 前端
 
@@ -168,7 +176,7 @@ docker compose up -d          # 测试库由容器首次初始化时创建
 
 测试库是 `kanban_test`，由 `deploy/initdb/01-test-db.sql` 建库并给 `kanban` 用户授权；`tests/conftest.py` 覆盖 `DATABASE_URL` 后每个用例前 `truncate_all()` 重建表并清空限流计数。测试用 `TestClient` 且带 `X-Kanban: 1`。
 
-覆盖：健康检查、注册登录登出与请求头校验、项目与看板初始化（默认三列四标签）、邀请需批准、只读成员不能写、每日建项目上限、附件与截止日期。
+覆盖：健康检查、注册登录登出与请求头校验、注册验证码、项目与看板初始化（默认三列四标签）、邀请需批准、只读成员不能写、每日建项目上限、附件与截止日期。测试通过 `MAIL_CAPTURE=1` 截获验证码，不连真实 SMTP；生产环境不要设置这个变量。
 
 `truncate_all()` 会 DROP 该库所有表，**不要**把 `DATABASE_URL` 指到生产库跑测试。
 
@@ -176,6 +184,7 @@ docker compose up -d          # 测试库由容器首次初始化时创建
 
 - 必须换掉 `SECRET_KEY`、MariaDB 的 root 与 `kanban` 密码；`docker-compose.yml` 里是明文开发口令。
 - HTTPS 下设置 `APP_SECURE_COOKIE=1`。
+- 必须配置 `SMTP_HOST` 等发信变量，否则无法注册。
 - 进程内限流和单 worker 假设不适配多副本；多副本时换共享存储。
 - 附件写在本地磁盘，多副本或容器重建需要改成共享卷或对象存储。
 

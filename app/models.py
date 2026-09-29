@@ -26,6 +26,16 @@ class User(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
 
+class EmailCode(Base):
+    __tablename__ = "email_codes"
+
+    email: Mapped[str] = mapped_column(String(254), primary_key=True)
+    code_hash: Mapped[str] = mapped_column(String(64))
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    sent_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+
+
 class Project(Base):
     __tablename__ = "projects"
 

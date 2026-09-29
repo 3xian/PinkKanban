@@ -31,6 +31,7 @@ class RegisterIn(BaseModel):
     email: str
     password: str = Field(min_length=8, max_length=128)
     display_name: str
+    code: str = ""
 
     @field_validator("email")
     @classmethod
@@ -44,6 +45,23 @@ class RegisterIn(BaseModel):
         if not NAME_RE.fullmatch(text):
             raise ValueError("显示名包含无法使用的字符")
         return text
+
+    @field_validator("code")
+    @classmethod
+    def _code(cls, value: str) -> str:
+        text = "".join(value.split())
+        if not re.fullmatch(r"\d{6}", text):
+            raise ValueError("请输入 6 位验证码")
+        return text
+
+
+class EmailIn(BaseModel):
+    email: str
+
+    @field_validator("email")
+    @classmethod
+    def _email(cls, value: str) -> str:
+        return clean_email(value)
 
 
 class LoginIn(BaseModel):
