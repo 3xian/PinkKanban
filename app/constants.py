@@ -37,7 +37,12 @@ ALLOWED_EXTENSIONS = {
     ".ppt",
     ".pptx",
 }
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
 MAX_UPLOAD_BYTES = 8 * 1024 * 1024
+MAX_LABELS = 30
+MAX_CHECKLISTS = 20
+MAX_CHECKLIST_ITEMS = 100
+MAX_COMMENTS = 1000
 MAX_COLUMNS = 40
 MAX_CARDS = 4000
 SESSION_COOKIE = "kb_session"

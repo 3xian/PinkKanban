@@ -141,3 +141,29 @@ def test_attachment_and_due(client):
     client.put(f"/api/cards/{card_id}/assignees", json={"ids": [client.get("/api/auth/me").json()["id"]]})
     tasks = client.get("/api/me/cards").json()["cards"]
     assert tasks[0]["title"] == "带附件"
+
+
+def test_duplicate_card_lands_after_original(client):
+    register(client, "dup@example.com", "复制")
+    project_id = client.post("/api/projects", json={"name": "复制", "description": "", "color": "#D63A56"}).json()["project"]["id"]
+    column_id = client.get(f"/api/projects/{project_id}/board").json()["columns"][0]["id"]
+    ids = [
+        client.post(f"/api/projects/{project_id}/cards", json={"column_id": column_id, "title": name}).json()["id"]
+        for name in ("A", "B", "C")
+    ]
+    copy_id = client.post(f"/api/cards/{ids[0]}/duplicate", json={}).json()["id"]
+    order = [card["id"] for card in client.get(f"/api/projects/{project_id}/board").json()["columns"][0]["cards"]]
+    assert order == [ids[0], copy_id, ids[1], ids[2]]
+
+
+def test_card_detail_reports_checklist_progress(client):
+    register(client, "check@example.com", "清单")
+    project_id = client.post("/api/projects", json={"name": "清单", "description": "", "color": "#3D6B8A"}).json()["project"]["id"]
+    column_id = client.get(f"/api/projects/{project_id}/board").json()["columns"][0]["id"]
+    card_id = client.post(f"/api/projects/{project_id}/cards", json={"column_id": column_id, "title": "带清单"}).json()["id"]
+    checklist_id = client.post(f"/api/cards/{card_id}/checklists", json={"title": "步骤"}).json()["id"]
+    done_item = client.post(f"/api/checklists/{checklist_id}/items", json={"text": "已完成"}).json()["id"]
+    client.post(f"/api/checklists/{checklist_id}/items", json={"text": "未完成"})
+    client.patch(f"/api/checklist-items/{done_item}", json={"done": True})
+    detail = client.get(f"/api/cards/{card_id}").json()
+    assert detail["card"]["checklist"] == {"done": 1, "total": 2}

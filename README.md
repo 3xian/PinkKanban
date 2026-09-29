@@ -130,7 +130,7 @@ run.bat
 
 ## 权限模型
 
-`ROLE_RANK` 为 `viewer 1 < member 2 < admin 3 < owner 4`，`services.py` 里统一由三个入口校验：
+`ROLE_RANK` 为 `viewer 1 < member 2 < admin 3 < owner 4`，`app/services/base.py` 里统一由三个入口校验：
 
 - `require_access`：绝大多数操作的入口。非成员一律 404（不泄露项目是否存在），角色不足 403，归档项目拒绝写（409）。
 - `begin_write`：在项目行上加 `SELECT ... FOR UPDATE`，串行化同一项目的并发写。
@@ -145,10 +145,10 @@ run.bat
 | 每日新建项目 | `DAILY_PROJECT_LIMIT`（默认 30） | `constants` / `config` |
 | 每项目列表数 | 40 | `MAX_COLUMNS` |
 | 每项目卡片数 | 4000 | `MAX_CARDS` |
-| 每项目标签数 | 30 | `services.create_label` |
-| 每卡片清单数 | 20 | `services.create_checklist` |
-| 每清单条目数 | 100 | `services.add_item` |
-| 每卡片评论数 | 1000 | `services.add_comment` |
+| 每项目标签数 | 30 | `MAX_LABELS` |
+| 每卡片清单数 | 20 | `MAX_CHECKLISTS` |
+| 每清单条目数 | 100 | `MAX_CHECKLIST_ITEMS` |
+| 每卡片评论数 | 1000 | `MAX_COMMENTS` |
 | 单个附件 | 8 MB | `MAX_UPLOAD_BYTES` |
 
 附件类型白名单见 `constants.ALLOWED_EXTENSIONS`。文件名只用于展示，落盘名是随机 hex + 原扩展名，存 `uploads/`；删除时由 `defer_unlink` 在事务提交成功后才删磁盘文件，回滚不会留下悬空引用。

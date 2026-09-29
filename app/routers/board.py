@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.config import UPLOAD_DIR
+from app.constants import IMAGE_EXTENSIONS
 from app.db import get_db
 from app.deps import current_user
 from app.models import User
@@ -26,10 +27,10 @@ from app.schemas import (
     ReorderIn,
 )
 from app.services import (
-    IMAGE_EXTENSIONS,
     add_attachment,
     add_comment,
     add_item,
+    attachment_dict,
     attachment_file,
     board_dict,
     card_detail,
@@ -60,7 +61,7 @@ from app.services import (
     update_item,
     update_label,
     checklist_dict,
-    _attachment,
+    checklist_dict,
 )
 
 router = APIRouter(prefix="/api", tags=["board"])
@@ -221,7 +222,7 @@ def remove_comment(comment_id: int, user: User = Depends(current_user), db: Sess
 def upload(card_id: int, file: UploadFile = File(...), user: User = Depends(current_user), db: Session = Depends(get_db)):
     raw = file.file.read()
     row = add_attachment(db, card_id, user, file.filename or "", raw)
-    return _attachment(row)
+    return attachment_dict(row)
 
 
 @router.delete("/attachments/{attachment_id}")
