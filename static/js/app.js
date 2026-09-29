@@ -26,6 +26,7 @@ const state = {
   dragging: false,
   authMode: "login",
   color: COLORS[0],
+  pendingCard: null,
 };
 
 const app = document.getElementById("app");
@@ -147,7 +148,10 @@ async function openBoard(id) {
   state.cardId = null;
   drawer.hidden = true;
   state.board = await api(`/api/projects/${id}/board`);
+  const pending = state.pendingCard;
+  state.pendingCard = null;
   render();
+  if (pending && state.view === "board" && state.projectId === id) await openCard(pending);
 }
 
 async function openSettings(id) {
@@ -654,182 +658,278 @@ async function run(node, fn) {
   }
 }
 
-document.addEventListener("click", (event) => {
-  const node = event.target.closest("[data-act]");
-  if (!node) return;
-  const act = node.dataset.act;
-  const id = Number(node.dataset.id);
-  if (act === "auth-mode") {
+function idOf(node) {
+  return Number(node.dataset.id);
+}
+
+const clicks = {
+  "auth-mode"(node) {
     state.authMode = node.dataset.mode;
     render();
-  } else if (act === "nav") {
+  },
+  nav(node) {
     state.sidebar = false;
     if (node.dataset.view === "board") {
       if (state.projectId) go(`#/board/${state.projectId}`);
       else go("#/projects");
     } else go(`#/${node.dataset.view}`);
-  } else if (act === "toggle-side") {
+  },
+  "toggle-side"() {
     state.sidebar = !state.sidebar;
     render();
-  } else if (act === "close-side") {
+  },
+  "close-side"() {
     state.sidebar = false;
     render();
-  } else if (act === "open-project") go(`#/board/${id}`);
-  else if (act === "open-settings") go(`#/settings/${id || state.projectId}`);
-  else if (act === "new-project") {
+  },
+  "open-project"(node) {
+    go(`#/board/${idOf(node)}`);
+  },
+  "open-settings"(node) {
+    go(`#/settings/${idOf(node) || state.projectId}`);
+  },
+  "new-project"() {
     state.modal = { type: "project", title: "新建项目", ok: "创建" };
     paintModal();
-  } else if (act === "close-modal") {
+  },
+  "close-modal"() {
     state.modal = null;
     paintModal();
-  } else if (act === "close-drawer") closeDrawer();
-  else if (act === "toggle-archived") {
+  },
+  "close-drawer"() {
+    closeDrawer();
+  },
+  "toggle-archived"(node) {
     state.showArchived = !state.showArchived;
     run(node, async () => { await loadProjects(); render(); });
-  } else if (act === "filter") {
+  },
+  filter(node) {
     state.filters[node.dataset.key] = !state.filters[node.dataset.key];
     render();
-  } else if (act === "compose") {
+  },
+  compose(node) {
     state.compose = { columnId: Number(node.dataset.column) };
     paintCanvas();
     document.querySelector("[data-autofocus]")?.focus();
-  } else if (act === "new-column") {
+  },
+  "new-column"() {
     state.modal = { type: "column", title: "新列表", ok: "添加" };
     paintModal();
-  } else if (act === "edit-column") {
+  },
+  "edit-column"(node) {
+    const id = idOf(node);
     const column = state.board.columns.find((item) => item.id === id);
     state.modal = { type: "column", title: "列表设置", id, name: column.name, color: column.color, wip: column.wip_limit || "", ok: "保存", remove: true };
     paintModal();
-  } else if (act === "delete-column") run(node, async () => {
-    await api(`/api/columns/${id}`, { method: "DELETE" });
+  },
+  "delete-column"(node) {
+    const id = idOf(node);
+    run(node, async () => {
+      await api(`/api/columns/${id}`, { method: "DELETE" });
+      state.modal = null;
+      await reloadBoard();
+      render();
+    });
+  },
+  "pick-color"(node) {
+    state.color = node.dataset.color;
+    node.parentElement.querySelectorAll(".swatch").forEach((swatch) => swatch.classList.toggle("is-on", swatch === node));
+  },
+  priority(node) {
+    run(node, () => saveCard({ priority: node.dataset.value }));
+  },
+  cover(node) {
+    run(node, () => saveCard({ cover_color: node.dataset.color || null }));
+  },
+  done(node) {
+    run(node, () => saveCard({ done: node.checked }));
+  },
+  "toggle-label"(node) {
+    run(node, () => toggleIds("labels", idOf(node)));
+  },
+  "toggle-assignee"(node) {
+    run(node, () => toggleIds("assignees", idOf(node)));
+  },
+  accept(node) {
+    const id = idOf(node);
+    run(node, async () => { await api(`/api/notifications/${id}/accept`, { method: "POST" }); toast("已加入项目"); await openNotes(); });
+  },
+  reject(node) {
+    run(node, async () => { await api(`/api/notifications/${idOf(node)}/reject`, { method: "POST" }); await openNotes(); });
+  },
+  "read-all"(node) {
+    run(node, async () => { await api("/api/notifications/read-all", { method: "POST" }); await openNotes(); });
+  },
+  "open-task"(node) {
+    state.pendingCard = idOf(node);
+    go(`#/board/${node.dataset.project}`);
+  },
+  logout(node) {
+    run(node, async () => { await api("/api/auth/logout", { method: "POST" }); state.user = null; render(); });
+  },
+  "cancel-invite"(node) {
+    const id = idOf(node);
+    run(node, async () => { state.settings = await api(`/api/projects/${state.projectId}/invites/${id}/cancel`, { method: "POST" }); render(); });
+  },
+  leave(node) {
+    run(node, async () => { await api(`/api/projects/${state.projectId}/leave`, { method: "POST" }); go("#/projects"); });
+  },
+  "archive-project"(node) {
+    run(node, async () => { await api(`/api/projects/${state.projectId}/archive`, { method: "POST" }); go("#/projects"); });
+  },
+  "restore-project"(node) {
+    run(node, async () => { await api(`/api/projects/${state.projectId}/restore`, { method: "POST" }); await openSettings(state.projectId); });
+  },
+  "delete-project"() {
+    state.modal = { type: "confirm", title: "删除项目", body: "卡片、评论和附件会一起删除。今天的创建次数不会退回。", ok: "删除", action: "delete-project" };
+    paintModal();
+  },
+  transfer(node) {
+    const id = idOf(node);
+    run(node, async () => { state.settings = await api(`/api/projects/${state.projectId}/transfer`, { method: "POST", body: { user_id: id } }); render(); });
+  },
+  "remove-member"(node) {
+    const id = idOf(node);
+    run(node, async () => { state.settings = await api(`/api/projects/${state.projectId}/members/${id}`, { method: "DELETE" }); render(); });
+  },
+  duplicate(node) {
+    run(node, async () => { await api(`/api/cards/${state.cardId}/duplicate`, { method: "POST" }); await reloadBoard(); toast("已复制"); });
+  },
+  "archive-card"(node) {
+    run(node, async () => { await api(`/api/cards/${state.cardId}/archive`, { method: "POST" }); closeDrawer(); await reloadBoard(); });
+  },
+  "restore-card"(node) {
+    run(node, async () => { await api(`/api/cards/${state.cardId}/restore`, { method: "POST" }); await openCard(state.cardId); await reloadBoard(); });
+  },
+  "delete-card"() {
+    state.modal = { type: "confirm", title: "删除卡片", body: "这张卡片和它的评论、附件会被删除。", ok: "删除", action: "delete-card" };
+    paintModal();
+  },
+  "delete-comment"(node) {
+    const id = idOf(node);
+    run(node, async () => { await api(`/api/comments/${id}`, { method: "DELETE" }); await openCard(state.cardId); });
+  },
+  "delete-item"(node) {
+    const id = idOf(node);
+    run(node, async () => { await api(`/api/checklist-items/${id}`, { method: "DELETE" }); await openCard(state.cardId); });
+  },
+  "delete-file"(node) {
+    const id = idOf(node);
+    run(node, async () => { await api(`/api/attachments/${id}`, { method: "DELETE" }); await openCard(state.cardId); await reloadBoard(); });
+  },
+  item(node) {
+    const id = idOf(node);
+    run(node, async () => { await api(`/api/checklist-items/${id}`, { method: "PATCH", body: { done: node.checked } }); await openCard(state.cardId); await reloadBoard(); });
+  },
+};
+
+document.addEventListener("click", (event) => {
+  const node = event.target.closest("[data-act]");
+  clicks[node?.dataset.act]?.(node);
+});
+
+function columnBody(data) {
+  return { name: data.name, color: state.color, wip_limit: data.wip_limit ? Number(data.wip_limit) : null };
+}
+
+const forms = {
+  async auth(data) {
+    const path = state.authMode === "login" ? "/api/auth/login" : "/api/auth/register";
+    await api(path, { method: "POST", body: data });
+    applyBootstrap(await api("/api/bootstrap"));
+    go("#/projects");
+  },
+  async project(data) {
+    if (!state.modal) return;
+    const created = await api("/api/projects", { method: "POST", body: { name: data.name, description: data.description || "", color: state.color } });
+    state.quota = created.quota;
+    state.modal = null;
+    go(`#/board/${created.project.id}`);
+  },
+  async "project-save"(data) {
+    state.settings = await api(`/api/projects/${state.projectId}`, { method: "PATCH", body: { name: data.name, description: data.description || "", color: state.color } });
+    toast("已保存");
+    render();
+  },
+  async column(data) {
+    const body = columnBody(data);
+    if (state.modal?.id) await api(`/api/columns/${state.modal.id}`, { method: "PATCH", body });
+    else await api(`/api/projects/${state.projectId}/columns`, { method: "POST", body });
     state.modal = null;
     await reloadBoard();
     render();
-  });
-  else if (act === "pick-color") {
-    state.color = node.dataset.color;
-    node.parentElement.querySelectorAll(".swatch").forEach((swatch) => swatch.classList.toggle("is-on", swatch === node));
-  } else if (act === "priority") run(node, () => saveCard({ priority: node.dataset.value }));
-  else if (act === "cover") run(node, () => saveCard({ cover_color: node.dataset.color || null }));
-  else if (act === "done") run(node, () => saveCard({ done: node.checked }));
-  else if (act === "toggle-label") run(node, () => toggleIds("labels", id));
-  else if (act === "toggle-assignee") run(node, () => toggleIds("assignees", id));
-  else if (act === "accept") run(node, async () => { await api(`/api/notifications/${id}/accept`, { method: "POST" }); toast("已加入项目"); await openNotes(); });
-  else if (act === "reject") run(node, async () => { await api(`/api/notifications/${id}/reject`, { method: "POST" }); await openNotes(); });
-  else if (act === "read-all") run(node, async () => { await api("/api/notifications/read-all", { method: "POST" }); await openNotes(); });
-  else if (act === "open-task") {
-    state.projectId = Number(node.dataset.project);
-    go(`#/board/${state.projectId}`);
-    setTimeout(() => openCard(id), 400);
-  } else if (act === "logout") run(node, async () => { await api("/api/auth/logout", { method: "POST" }); state.user = null; render(); });
-  else if (act === "cancel-invite") run(node, async () => { state.settings = await api(`/api/projects/${state.projectId}/invites/${id}/cancel`, { method: "POST" }); render(); });
-  else if (act === "leave") run(node, async () => { await api(`/api/projects/${state.projectId}/leave`, { method: "POST" }); go("#/projects"); });
-  else if (act === "archive-project") run(node, async () => { await api(`/api/projects/${state.projectId}/archive`, { method: "POST" }); go("#/projects"); });
-  else if (act === "restore-project") run(node, async () => { await api(`/api/projects/${state.projectId}/restore`, { method: "POST" }); await openSettings(state.projectId); });
-  else if (act === "delete-project") {
-    state.modal = { type: "confirm", title: "删除项目", body: "卡片、评论和附件会一起删除。今天的创建次数不会退回。", ok: "删除", action: "delete-project" };
-    paintModal();
-  } else if (act === "transfer") run(node, async () => { state.settings = await api(`/api/projects/${state.projectId}/transfer`, { method: "POST", body: { user_id: id } }); render(); });
-  else if (act === "remove-member") run(node, async () => { state.settings = await api(`/api/projects/${state.projectId}/members/${id}`, { method: "DELETE" }); render(); });
-  else if (act === "duplicate") run(node, async () => { await api(`/api/cards/${state.cardId}/duplicate`, { method: "POST" }); await reloadBoard(); toast("已复制"); });
-  else if (act === "archive-card") run(node, async () => { await api(`/api/cards/${state.cardId}/archive`, { method: "POST" }); closeDrawer(); await reloadBoard(); });
-  else if (act === "restore-card") run(node, async () => { await api(`/api/cards/${state.cardId}/restore`, { method: "POST" }); await openCard(state.cardId); await reloadBoard(); });
-  else if (act === "delete-card") {
-    state.modal = { type: "confirm", title: "删除卡片", body: "这张卡片和它的评论、附件会被删除。", ok: "删除", action: "delete-card" };
-    paintModal();
-  } else if (act === "delete-comment") run(node, async () => { await api(`/api/comments/${id}`, { method: "DELETE" }); await openCard(state.cardId); });
-  else if (act === "delete-item") run(node, async () => { await api(`/api/checklist-items/${id}`, { method: "DELETE" }); await openCard(state.cardId); });
-  else if (act === "delete-file") run(node, async () => { await api(`/api/attachments/${id}`, { method: "DELETE" }); await openCard(state.cardId); await reloadBoard(); });
-  else if (act === "item") run(node, async () => { await api(`/api/checklist-items/${id}`, { method: "PATCH", body: { done: node.checked } }); await openCard(state.cardId); await reloadBoard(); });
-});
-
-document.addEventListener("submit", (event) => {
-  const form = event.target.closest("[data-form]");
-  if (!form) return;
-  event.preventDefault();
-  const kind = form.dataset.form;
-  const data = formData(form);
-  run(form.querySelector("[type=submit]"), async () => {
-    if (kind === "auth") {
-      const path = state.authMode === "login" ? "/api/auth/login" : "/api/auth/register";
-      await api(path, { method: "POST", body: data });
-      applyBootstrap(await api("/api/bootstrap"));
-      go("#/projects");
-    } else if (kind === "project" && state.modal) {
-      const created = await api("/api/projects", { method: "POST", body: { name: data.name, description: data.description || "", color: state.color } });
-      state.quota = created.quota;
-      state.modal = null;
-      go(`#/board/${created.project.id}`);
-    } else if (kind === "project-save") {
-      state.settings = await api(`/api/projects/${state.projectId}`, { method: "PATCH", body: { name: data.name, description: data.description || "", color: state.color } });
-      toast("已保存");
-      render();
-
-    } else if (kind === "column" && state.modal?.id) {
-      await api(`/api/columns/${state.modal.id}`, { method: "PATCH", body: { name: data.name, color: state.color, wip_limit: data.wip_limit ? Number(data.wip_limit) : null } });
-      state.modal = null;
-      await reloadBoard();
-      render();
-    } else if (kind === "column") {
-      await api(`/api/projects/${state.projectId}/columns`, { method: "POST", body: { name: data.name, color: state.color, wip_limit: data.wip_limit ? Number(data.wip_limit) : null } });
-      state.modal = null;
-      await reloadBoard();
-      render();
-    } else if (kind === "confirm" && state.modal?.action === "delete-project") {
+  },
+  async confirm() {
+    if (state.modal?.action === "delete-project") {
       await api(`/api/projects/${state.projectId}`, { method: "DELETE" });
       state.modal = null;
       go("#/projects");
-    } else if (kind === "confirm" && state.modal?.action === "delete-card") {
+    } else if (state.modal?.action === "delete-card") {
       await api(`/api/cards/${state.cardId}`, { method: "DELETE" });
       state.modal = null;
       closeDrawer();
       await reloadBoard();
       render();
-    } else if (kind === "card") {
-      await api(`/api/projects/${state.projectId}/cards`, { method: "POST", body: { column_id: Number(data.column_id), title: data.title } });
-      state.compose = null;
-      await reloadBoard();
-    } else if (kind === "invite") {
-      state.settings = await api(`/api/projects/${state.projectId}/invites`, { method: "POST", body: data });
-      toast("已发送站内邀请");
-      render();
-    } else if (kind === "account") {
-      state.user = await api("/api/auth/me", { method: "PATCH", body: { display_name: data.display_name, avatar_color: state.color } });
-      toast("已保存");
-      render();
-    } else if (kind === "password") {
-      await api("/api/auth/password", { method: "POST", body: data });
-      form.reset();
-      toast("密码已更新");
-    } else if (kind === "comment") {
-      state.detail = await api(`/api/cards/${state.cardId}/comments`, { method: "POST", body: { body: data.body } });
-      paintDrawer();
-      await reloadBoard();
-    } else if (kind === "checklist") {
-      await api(`/api/cards/${state.cardId}/checklists`, { method: "POST", body: { title: data.title } });
-      await openCard(state.cardId);
-      await reloadBoard();
-    } else if (kind === "item") {
-      await api(`/api/checklists/${data.checklist_id}/items`, { method: "POST", body: { text: data.text } });
-      await openCard(state.cardId);
-      await reloadBoard();
-    } else if (kind === "label") {
-      await api(`/api/projects/${state.projectId}/labels`, { method: "POST", body: { name: data.name, color: state.color } });
-      await reloadBoard();
-      await openCard(state.cardId);
     }
-  });
+  },
+  async card(data) {
+    await api(`/api/projects/${state.projectId}/cards`, { method: "POST", body: { column_id: Number(data.column_id), title: data.title } });
+    state.compose = null;
+    await reloadBoard();
+  },
+  async invite(data) {
+    state.settings = await api(`/api/projects/${state.projectId}/invites`, { method: "POST", body: data });
+    toast("已发送站内邀请");
+    render();
+  },
+  async account(data) {
+    state.user = await api("/api/auth/me", { method: "PATCH", body: { display_name: data.display_name, avatar_color: state.color } });
+    toast("已保存");
+    render();
+  },
+  async password(data, form) {
+    await api("/api/auth/password", { method: "POST", body: data });
+    form.reset();
+    toast("密码已更新");
+  },
+  async comment(data) {
+    state.detail = await api(`/api/cards/${state.cardId}/comments`, { method: "POST", body: { body: data.body } });
+    paintDrawer();
+    await reloadBoard();
+  },
+  async checklist(data) {
+    await api(`/api/cards/${state.cardId}/checklists`, { method: "POST", body: { title: data.title } });
+    await openCard(state.cardId);
+    await reloadBoard();
+  },
+  async item(data) {
+    await api(`/api/checklists/${data.checklist_id}/items`, { method: "POST", body: { text: data.text } });
+    await openCard(state.cardId);
+    await reloadBoard();
+  },
+  async label(data) {
+    await api(`/api/projects/${state.projectId}/labels`, { method: "POST", body: { name: data.name, color: state.color } });
+    await reloadBoard();
+    await openCard(state.cardId);
+  },
+};
+
+document.addEventListener("submit", (event) => {
+  const form = event.target.closest("[data-form]");
+  if (!form) return;
+  event.preventDefault();
+  const data = formData(form);
+  run(form.querySelector("[type=submit]"), () => forms[form.dataset.form]?.(data, form));
 });
 
 document.addEventListener("change", (event) => {
   const node = event.target;
-  if (node.id === "filter-label") {
-    state.filters.label = node.value;
+  if (node.id === "filter-label" || node.id === "filter-priority") {
+    state.filters[node.id === "filter-label" ? "label" : "priority"] = node.value;
     paintCanvas();
-  } else if (node.id === "filter-priority") {
-    state.filters.priority = node.value;
-    paintCanvas();
-  } else if (node.dataset.act === "role") {
+    return;
+  }
+  if (node.dataset.act === "role") {
     run(node, async () => {
       state.settings = await api(`/api/projects/${state.projectId}/members/${node.dataset.id}`, { method: "PATCH", body: { role: node.value } });
       render();
