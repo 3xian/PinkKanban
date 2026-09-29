@@ -1,0 +1,24 @@
+services:
+  mariadb:
+    image: mariadb:10.11
+    environment:
+      MARIADB_ROOT_PASSWORD: kanban-root
+      MARIADB_DATABASE: kanban
+      MARIADB_USER: kanban
+      MARIADB_PASSWORD: kanban
+    ports:
+      - "3307:3306"
+    volumes:
+      - kanban_db:/var/lib/mysql
+      - ./deploy/initdb:/docker-entrypoint-initdb.d:ro
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  kanban_db:

@@ -1,0 +1,9 @@
+{
+  "name": "看板",
+  "short_name": "看板",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f3eee8",
+  "theme_color": "#161311",
+  "icons": [{ "src": "/static/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}
