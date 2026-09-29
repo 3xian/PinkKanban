@@ -31,7 +31,7 @@
   --shadow-overlay: 0 28px 80px rgba(0, 0, 0, .5);
   --blur-surface: 16px;
   --blur-overlay: 22px;
-  --side: 244px;
+  --side: 216px;
   --ink: var(--text-primary);
   --muted: var(--text-muted);
   --sans: "Outfit", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
@@ -196,7 +196,7 @@ body.is-auth { overflow: hidden; background: #080b12; }
   background: var(--bg-sidebar); color: var(--text-primary); padding: 16px 12px 12px; display: flex; flex-direction: column; gap: 14px;
   position: sticky; top: 0; height: 100dvh; border-right: 1px solid var(--border-subtle); backdrop-filter: blur(var(--blur-surface));
 }
-.brand-copy { display: flex; flex-direction: column; line-height: 1.05; min-width: 0; }
+.brand-copy { display: flex; flex-direction: column; gap: 2px; line-height: 1.25; min-width: 0; }
 .brand-copy strong { font-size: 14px; font-weight: 700; letter-spacing: -.03em; }
 .brand-copy small { font-size: 11px; font-weight: 500; color: var(--text-muted); letter-spacing: .01em; }
 .side-nav, .side-projects { display: flex; flex-direction: column; gap: 2px; }
@@ -210,8 +210,8 @@ body.is-auth { overflow: hidden; background: #080b12; }
 .nav-btn.is-on, .project-link.is-on {
   color: var(--text-primary);
   background: linear-gradient(90deg, rgba(139, 114, 255, .16), rgba(52, 217, 255, .05));
-  border-color: rgba(255, 255, 255, .06);
-  box-shadow: inset 2px 0 0 rgba(126, 233, 255, .72);
+  border-color: transparent;
+  box-shadow: none;
 }
 .nav-btn .badge, .tabbar .badge {
   margin-left: auto; background: var(--brand-gradient); color: #071018; border-radius: 999px; min-width: 18px; height: 18px;
