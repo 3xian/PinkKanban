@@ -7,3 +7,4 @@ uploads/*
 .pytest_cache/
 .mypy_cache/
 *.log
+AGENTS.md
