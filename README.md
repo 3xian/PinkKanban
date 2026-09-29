@@ -34,30 +34,6 @@ flowchart LR
 - **member**：干活的默认角色。列表、卡片、标签、清单、评论、附件都能增删改。
 - **viewer**：只能读。看板、卡片详情、活动流可见，任何写操作返回 403。
 
-### 邀请流程
-
-邀请是站内投递的，没有邮件。对方必须自己批准才会成为成员：
-
-```mermaid
-sequenceDiagram
-    participant A as admin/owner
-    participant N as 通知
-    participant B as 被邀请人
-    A->>N: 按已注册邮箱发邀请（指定角色）
-    N-->>B: 收到待处理邀请
-    alt 批准
-        B->>N: 接受
-        N-->>A: 邀请已接受通知
-    else 拒绝
-        B->>N: 拒绝
-        N-->>A: 邀请被拒绝通知
-    else 不处理
-        A->>N: 撤回邀请
-    end
-```
-
-约束：只能邀请已注册邮箱，不能邀请自己，已在项目中或已有待处理邀请都会报 409。邀请时不能指定 `owner`（`ASSIGNABLE_ROLES` 只有 admin/member/viewer）。
-
 ### 看板与卡片
 
 - **列表**：增删改名、改在制品上限（WIP）、拖拽排序；至少保留一个列表，删除列表时卡片会并入相邻列表。WIP 超出只在列表头标红提示，服务端不阻止移动。
