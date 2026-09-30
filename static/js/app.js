@@ -110,15 +110,33 @@ function visible(card) {
   return true;
 }
 
-async function boot() {
+export async function boot() {
   try {
     const data = await api("/api/bootstrap");
     applyBootstrap(data);
-  } catch {
+  } catch (error) {
+    if (error.status !== 401) throw error;
     state.user = null;
   }
-  route();
-  setInterval(poll, 8000);
+  // Use the projects included in bootstrap only for this initial navigation.
+  try {
+    let hash;
+    let useBootstrap = true;
+    do {
+      hash = location.hash;
+      try {
+        await route({ useBootstrap });
+      } catch (error) {
+        // An obsolete deep link must not hide the user's newer destination.
+        if (hash === location.hash) throw error;
+      }
+      useBootstrap = false;
+    } while (hash !== location.hash);
+  } finally {
+    // Keep navigation recoverable even when an initial deep link fails.
+    window.addEventListener("hashchange", () => { route().catch((error) => toast(error.message)); });
+    setInterval(poll, 8000);
+  }
 }
 
 function applyBootstrap(data) {
@@ -147,7 +165,7 @@ async function poll() {
   }
 }
 
-async function route() {
+async function route({ useBootstrap = false } = {}) {
   if (!state.user) {
     render();
     return;
@@ -163,7 +181,7 @@ async function route() {
     return;
   }
   state.view = "projects";
-  await loadProjects();
+  if (!useBootstrap || state.showArchived) await loadProjects();
   render();
 }
 
@@ -1352,6 +1370,3 @@ installDrag({
     }
   }),
 });
-
-window.addEventListener("hashchange", () => { route().catch((error) => toast(error.message)); });
-boot().catch((error) => toast(error.message));
