@@ -1,4 +1,4 @@
-"""Startup regression tests: python tests/startup_browser_test.py.
+"""Standalone startup regression tests: python tests/startup_browser.py.
 
 Requires Playwright and Chromium (CHROMIUM_PATH may override the executable).
 Uses only a local static server and mocked API responses, never production data.

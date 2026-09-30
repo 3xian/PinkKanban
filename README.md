@@ -180,6 +180,14 @@ docker compose up -d          # 测试库由容器首次初始化时创建
 
 `truncate_all()` 会 DROP 该库所有表，**不要**把 `DATABASE_URL` 指到生产库跑测试。
 
+前端回归测试：
+
+```bash
+node --test tests/api.test.mjs tests/startup.test.mjs
+```
+
+浏览器回归为独立脚本，不由 pytest 自动收集。需要额外安装 Playwright，并通过 `CHROMIUM_PATH` 指定 Chromium 可执行文件，再运行 `python tests/startup_browser.py`。脚本只使用本地静态服务器和模拟 API，不访问数据库。
+
 ## 生产注意
 
 - 必须换掉 `SECRET_KEY`、MariaDB 的 root 与 `kanban` 密码；`docker-compose.yml` 里是明文开发口令。
