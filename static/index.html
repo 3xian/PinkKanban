@@ -9,16 +9,33 @@
   <title>看板</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="manifest" href="/static/manifest.webmanifest">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/css/app.css">
+  <style>
+    html, body { margin: 0; min-height: 100%; background: #080b12; color: #f5f7fb; }
+    .startup { font-family: system-ui, "Microsoft YaHei", sans-serif; min-height: 100vh; display: grid; place-content: center; gap: 12px; padding: 24px; box-sizing: border-box; text-align: center; }
+    .startup h1, .startup p { margin: 0; }
+    .startup p { color: #b6c1d6; }
+    .startup a { color: #7ee9ff; }
+    .startup button { padding: 10px 18px; border: 1px solid #7ee9ff; border-radius: 8px; color: #f5f7fb; background: #161d2c; cursor: pointer; }
+  </style>
+  <link id="app-styles" rel="stylesheet" href="/static/css/app.css" media="print">
+  <link rel="modulepreload" href="/static/js/app.js">
+  <link rel="modulepreload" href="/static/js/api.js">
+  <link rel="modulepreload" href="/static/js/dnd.js">
+  <link rel="modulepreload" href="/static/js/format.js">
+  <link rel="modulepreload" href="/static/js/icons.js">
 </head>
 <body>
-  <div id="app"></div>
+  <div id="app">
+    <section class="startup" aria-live="polite">
+      <h1>看板</h1>
+      <p id="startup-message" role="status">正在连接，马上回来…</p>
+      <a href="">重新加载</a>
+      <noscript><p>请启用 JavaScript 后重新加载看板。</p></noscript>
+    </section>
+  </div>
   <div id="drawer" class="drawer" hidden></div>
   <div id="modal" class="modal" hidden></div>
   <div id="toasts"></div>
-  <script type="module" src="/static/js/app.js"></script>
+  <script type="module" src="/static/js/startup.js"></script>
 </body>
 </html>
