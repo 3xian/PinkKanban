@@ -62,7 +62,8 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         await page.route('**/static/css/**', lambda r: r.abort())
         await page.goto(self.url)
         self.assertTrue(await page.locator('.startup').is_visible())
-        self.assertTrue(await page.get_by_text('请启用 JavaScript 后重新加载看板。').is_visible())
+        self.assertTrue(await page.locator('noscript p').is_visible())
+        self.assertEqual(await page.locator('noscript p').inner_text(), '请启用 JavaScript 后重新加载看板。')
         self.assertEqual(await page.locator('body').evaluate('(el) => getComputedStyle(el).backgroundColor'), 'rgb(8, 11, 18)')
         await context.close()
     async def test_delayed_assets_show_fallback_then_projects(self):
@@ -131,7 +132,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         await self.page.goto(self.url, wait_until='domcontentloaded')
         await self.page.evaluate('location.hash = "#/account"')
         await self.page.locator('.shell').wait_for()
-        self.assertTrue(await self.page.locator('[data-form=profile]').is_visible())
+        await self.page.locator('[data-form=account]').wait_for(state='visible')
         await self.page.go_back()
         await self.page.get_by_role('heading', name='项目', exact=True).wait_for()
         self.assertFalse(self.errors)
