@@ -53,6 +53,6 @@ F:/AndroidSDK/platform-tools/adb.exe -s emulator-5554 shell am start -n com.fawe
 
 仅配置的同源页面在 WebView 内打开，不暴露 JavaScript 原生桥。HTTPS 证书错误直接拒绝，不加载混合 HTTP 内容；文件系统访问关闭，第三方 Cookie 禁用，Release 禁止 WebView 调试。带 Cookie 的原生下载仅允许 `/api/attachments/{数字ID}/file`，拒绝重定向，避免会话被转发到外部站点。备份与设备迁移排除应用私有数据。
 
-上传只接收已取得显式读取授权的 `content://` URI，并拒绝本应用提供的资源。系统返回和 Escape 共用网页的 `window.kanbanNavigation.handleBack()`；发布此客户端前需先更新服务端静态页面，旧页面缺少该入口时仅支持 WebView 历史返回。
+上传只接收已取得显式读取授权的 `content://` URI，并拒绝本应用提供的资源。系统返回和 Escape 共用网页的 `window.kanbanNavigation.handleBack()`；网页通过 `window.kanbanGestures.canPullRefreshAt(x, y)` 判断触点是否允许刷新，坐标为可见区域宽高的比例。发布此客户端前需先更新服务端静态页面，旧页面缺少这些入口时仅支持 WebView 历史返回，并禁用下拉刷新以避免抢占拖拽。
 
 `-PkanbanUrl=https://其他域名` 可配置其他部署；HTTP 仅 Debug 的 localhost、127.0.0.1、10.0.2.2 可用，Release 必须 HTTPS。更换服务后建议清空应用数据，避免保留旧服务的页面状态。

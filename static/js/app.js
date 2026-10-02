@@ -1,7 +1,10 @@
 import { api } from "./api.js";
 import { installDrag } from "./dnd.js";
+import { canPullRefreshAt } from "./refresh.js";
 import { ACTIONS, COLORS, PRIORITIES, ROLES, avatar, canAdmin, canEdit, dueInfo, el, fileSize, markdown, relative, safeColor } from "./format.js";
 import { icon as glyph } from "./icons.js";
+
+window.kanbanGestures = Object.freeze({ canPullRefreshAt });
 
 const state = {
   user: null,

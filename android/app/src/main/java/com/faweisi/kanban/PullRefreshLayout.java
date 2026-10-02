@@ -11,47 +11,46 @@ import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 @SuppressLint("ViewConstructor") // Created in code with its WebView, never inflated from XML.
 final class PullRefreshLayout extends SwipeRefreshLayout {
     private final WebView web;
-    private final int touchSlop;
-    private float startX, startY;
+    private final RefreshGesture direction;
     private int gesture;
-    private boolean pageBlocksRefresh, horizontal;
+    private boolean pageBlocksRefresh, refreshOwnsGesture;
 
     PullRefreshLayout(Context context, WebView web) {
         super(context);
         this.web = web;
-        touchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
+        direction = new RefreshGesture(ViewConfiguration.get(context).getScaledTouchSlop());
         addView(web, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+        // Once intercepted, keep delivering events so SwipeRefreshLayout can finish its spinner.
         setOnChildScrollUpCallback((parent, child) ->
-                pageBlocksRefresh || horizontal || web.canScrollVertically(-1));
+                !refreshOwnsGesture &&
+                (pageBlocksRefresh || direction.isHorizontal() || web.canScrollVertically(-1)));
+    }
+
+    @Override public boolean onInterceptTouchEvent(MotionEvent event) {
+        boolean intercept = super.onInterceptTouchEvent(event);
+        if (intercept) refreshOwnsGesture = true;
+        return intercept;
     }
 
     @Override public boolean dispatchTouchEvent(MotionEvent event) {
         if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
-            startX = event.getX();
-            startY = event.getY();
-            horizontal = false;
+            direction.start(event.getX(), event.getY());
+            refreshOwnsGesture = false;
             pageBlocksRefresh = false;
             int currentGesture = ++gesture;
             // Let SwipeRefreshLayout record the pointer before the asynchronous page check.
             boolean handled = super.dispatchTouchEvent(event);
             pageBlocksRefresh = true;
-            float x = startX / Math.max(1, web.getWidth());
-            float y = startY / Math.max(1, web.getHeight());
-            web.evaluateJavascript("(() => { let el = document.elementFromPoint(" + x +
-                    " * innerWidth, " + y + " * innerHeight); if (!el) return true; " +
-                    "for (; el; el = el.parentElement) { " +
-                    "if (el.isContentEditable || el.matches('button, a, input, textarea, select, label, " +
-                    "[draggable=true], [data-drag], [data-drop-column]')) return true; " +
-                    "if (el !== document.scrollingElement && el.scrollHeight > el.clientHeight && " +
-                    "/auto|scroll/.test(getComputedStyle(el).overflowY)) return true; } return false; })()",
-                    blocked -> {
-                        if (gesture == currentGesture) pageBlocksRefresh = !"false".equals(blocked);
+            float x = event.getX() / Math.max(1, web.getWidth());
+            float y = event.getY() / Math.max(1, web.getHeight());
+            web.evaluateJavascript("window.kanbanGestures?.canPullRefreshAt(" + x + ", " + y + ") === true",
+                    allowed -> {
+                        if (gesture == currentGesture) pageBlocksRefresh = !"true".equals(allowed);
                     });
             return handled;
         }
         if (event.getActionMasked() == MotionEvent.ACTION_MOVE) {
-            float dx = Math.abs(event.getX() - startX), dy = Math.abs(event.getY() - startY);
-            if (dx > touchSlop && dx > dy) horizontal = true;
+            direction.move(event.getX(), event.getY());
         }
         if (event.getActionMasked() == MotionEvent.ACTION_UP || event.getActionMasked() == MotionEvent.ACTION_CANCEL) {
             ++gesture;
