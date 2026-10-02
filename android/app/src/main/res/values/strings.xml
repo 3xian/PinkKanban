@@ -3,19 +3,14 @@
     <string name="upload_rejected">无法读取所选文件，请重新选择</string>
     <string name="app_name">看板</string>
     <string name="refresh">刷新</string>
-    <string name="browser">在浏览器打开</string>
-    <string name="about">关于看板</string>
     <string name="retry">重新连接</string>
-    <string name="connecting">正在连接看板…</string>
     <string name="connection_failed">暂时无法连接</string>
     <string name="connection_help">请检查网络后重试。服务恢复后，你的项目和任务仍会保留。</string>
     <string name="no_handler">没有可以打开此内容的应用</string>
     <string name="saving">正在保存附件…</string>
     <string name="saved">附件已保存</string>
     <string name="save_failed">保存失败，请检查网络并重试</string>
-    <string name="more">更多选项</string>
     <string name="exit">退出看板？</string>
     <string name="cancel">取消</string>
     <string name="confirm_exit">退出</string>
-    <string name="about_message">看板 %1$s\n\n项目、任务、评论和附件与网页实时同步。\n服务：%2$s\n\n此版本使用 Android WebView，需要联网使用；通知为应用内通知。</string>
 </resources>

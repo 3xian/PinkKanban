@@ -658,10 +658,10 @@ button.pill.is-on { opacity: 1; box-shadow: inset 0 0 0 1px color-mix(in srgb, v
     background: rgba(8, 11, 18, .82); border: 1px solid var(--border-subtle);
     backdrop-filter: blur(var(--blur-surface));
   }
-  .view { padding: 52px 14px 96px; }
+  .view { padding: 14px 14px 96px; }
   .backdrop { position: fixed; inset: 0; background: rgba(5,7,12,.55); z-index: 20; border: 0; }
-  .page-head, .board-head { flex-direction: column; align-items: stretch; gap: 10px; }
-  .page-head h2, .board-head h2, .settings-main h2 { font-size: 24px; }
+  .page-head, .board-head { flex-direction: column; align-items: stretch; gap: 10px; margin: 4px 0 16px; }
+  .page-head h2, .board-head h2, .settings-main h2 { font-size: 24px; padding-right: 44px; }
   .board-people { justify-content: space-between; }
   .search-wrap { max-width: none; flex: 1 1 100%; }
   .filter-note { margin-left: 0; }

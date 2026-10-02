@@ -15,6 +15,7 @@ import android.os.Looper;
 import android.os.Message;
 import android.view.Gravity;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.WindowInsets;
 import android.webkit.CookieManager;
 import android.webkit.SslErrorHandler;
@@ -30,8 +31,6 @@ import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
-import android.widget.PopupMenu;
-import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 import java.util.concurrent.ExecutorService;
@@ -44,7 +43,7 @@ public final class MainActivity extends Activity {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final ExecutorService downloads = Executors.newSingleThreadExecutor();
     private WebView web;
-    private ProgressBar progress;
+    private PullRefreshLayout refresh;
     private LinearLayout errorPanel;
     private ValueCallback<Uri[]> fileCallback;
     private AttachmentSaver.Download pendingDownload;
@@ -91,37 +90,16 @@ public final class MainActivity extends Activity {
         setContentView(root);
         root.requestApplyInsets();
 
-        LinearLayout toolbar = new LinearLayout(this);
-        toolbar.setGravity(Gravity.CENTER_VERTICAL);
-        toolbar.setPadding(dp(16), 0, dp(6), 0);
-        TextView title = text(getString(R.string.app_name), 18);
-        toolbar.addView(title, new LinearLayout.LayoutParams(0, dp(48), 1));
-        title.setGravity(Gravity.CENTER_VERTICAL);
-        Button refresh = new Button(this);
-        refresh.setText("↻");
-        refresh.setTextSize(24);
-        refresh.setBackgroundResource(android.R.drawable.list_selector_background);
-        refresh.setContentDescription(getString(R.string.refresh));
-        refresh.setOnClickListener(v -> reload());
-        toolbar.addView(refresh, new LinearLayout.LayoutParams(dp(48), dp(48)));
-        Button menu = new Button(this);
-        menu.setText("⋮");
-        menu.setTextSize(24);
-        menu.setBackgroundResource(android.R.drawable.list_selector_background);
-        menu.setContentDescription(getString(R.string.more));
-        menu.setOnClickListener(v -> showMenu(v));
-        toolbar.addView(menu, new LinearLayout.LayoutParams(dp(48), dp(48)));
-        root.addView(toolbar);
-
-        progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
-        progress.setIndeterminate(false);
-        progress.setContentDescription(getString(R.string.connecting));
-        root.addView(progress, new LinearLayout.LayoutParams(-1, dp(2)));
         FrameLayout content = new FrameLayout(this);
         root.addView(content, new LinearLayout.LayoutParams(-1, 0, 1));
         web = new WebView(this);
         web.setBackgroundColor(BACKGROUND);
-        content.addView(web, new FrameLayout.LayoutParams(-1, -1));
+        refresh = new PullRefreshLayout(this, web);
+        refresh.setContentDescription(getString(R.string.refresh));
+        refresh.setColorSchemeColors(Color.rgb(126, 233, 255));
+        refresh.setProgressBackgroundColorSchemeColor(BACKGROUND);
+        refresh.setOnRefreshListener(this::reload);
+        content.addView(refresh, new FrameLayout.LayoutParams(-1, -1));
 
         errorPanel = new LinearLayout(this);
         errorPanel.setOrientation(LinearLayout.VERTICAL);
@@ -169,7 +147,7 @@ public final class MainActivity extends Activity {
             }
             @Override public void onPageFinished(WebView view, String url) {
                 handler.removeCallbacks(timeout);
-                progress.setVisibility(View.INVISIBLE);
+                refresh.setRefreshing(false);
                 CookieManager.getInstance().flush();
                 if (!pageFailed) errorPanel.setVisibility(View.GONE);
             }
@@ -177,7 +155,7 @@ public final class MainActivity extends Activity {
                 // Optional remote fonts must not turn an already visible app into a timeout error.
                 if (!pageFailed && policy.isInternal(url)) {
                     handler.removeCallbacks(timeout);
-                    progress.setVisibility(View.INVISIBLE);
+                    refresh.setRefreshing(false);
                 }
             }
             @Override public void doUpdateVisitedHistory(WebView view, String url, boolean reload) {
@@ -195,7 +173,7 @@ public final class MainActivity extends Activity {
             }
             @Override public boolean onRenderProcessGone(WebView view, android.webkit.RenderProcessGoneDetail detail) {
                 // Recreate the activity rather than reuse a WebView whose renderer died.
-                ((FrameLayout) view.getParent()).removeView(view);
+                ((ViewGroup) view.getParent()).removeView(view);
                 view.destroy();
                 web = null;
                 recreate();
@@ -203,7 +181,6 @@ public final class MainActivity extends Activity {
             }
         });
         web.setWebChromeClient(new WebChromeClient() {
-            @Override public void onProgressChanged(WebView view, int value) { progress.setProgress(value); }
             @Override public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
                 if (!policy.isInternal(view.getUrl())) return false;
                 cancelFileChooser();
@@ -318,7 +295,8 @@ public final class MainActivity extends Activity {
     private void beginLoading() {
         pageFailed = false;
         errorPanel.setVisibility(View.GONE);
-        progress.setVisibility(View.VISIBLE);
+        refresh.setEnabled(true);
+        refresh.setRefreshing(true);
         handler.removeCallbacks(timeout);
         handler.postDelayed(timeout, 30000);
     }
@@ -326,22 +304,9 @@ public final class MainActivity extends Activity {
     private void showError() {
         pageFailed = true;
         handler.removeCallbacks(timeout);
-        progress.setVisibility(View.INVISIBLE);
+        refresh.setRefreshing(false);
+        refresh.setEnabled(false);
         errorPanel.setVisibility(View.VISIBLE);
-    }
-
-    private void showMenu(View anchor) {
-        PopupMenu menu = new PopupMenu(this, anchor);
-        menu.getMenu().add(0, 1, 0, R.string.browser);
-        menu.getMenu().add(0, 2, 1, R.string.about);
-        menu.setOnMenuItemClickListener(item -> {
-            if (item.getItemId() == 1) openExternal(currentPage);
-            else new AlertDialog.Builder(this).setTitle(R.string.app_name)
-                    .setMessage(getString(R.string.about_message, BuildConfig.VERSION_NAME, BuildConfig.SERVER_URL))
-                    .setPositiveButton(android.R.string.ok, null).show();
-            return true;
-        });
-        menu.show();
     }
 
     // API 33+ uses the platform dispatcher registered in onCreate; this fallback serves API 26–32.

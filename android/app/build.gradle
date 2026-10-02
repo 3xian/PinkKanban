@@ -39,4 +39,7 @@ gradle.taskGraph.whenReady { graph ->
     }
 }
 
-dependencies { testImplementation 'junit:junit:4.13.2' }
+dependencies {
+    implementation 'androidx.swiperefreshlayout:swiperefreshlayout:1.2.0'
+    testImplementation 'junit:junit:4.13.2'
+}
