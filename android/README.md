@@ -30,6 +30,16 @@ cmd.exe /c android\gradlew.bat -p android assembleRelease lintRelease
 
 Release 默认未签名，使用 Android Studio 的 **Generate Signed App Bundle / APK** 和自己的发布密钥签名；密钥文件与口令不要入库。Debug 使用自动生成的开发密钥，适合本机安装验收，不用于商店发布。
 
+## 自动构建与发布
+
+GitHub Actions 的 `CI` 在分支 push、PR 和手动运行时检查后端 API、网页单测、浏览器启动流程、QA 服务边界，并构建 Debug / Release APK、运行 Android 单测和 Lint。后端只使用 Actions 临时 MariaDB 的 `kanban_test` 库；普通 CI 不读取发布密钥。APK 和 Android 检查报告保存在运行的 Artifacts 中。
+
+发布前修改 `app/build.gradle` 的 `versionName` 和递增的 `versionCode`，提交到 `main`，再推送对应的 `vMAJOR.MINOR.PATCH` 标签。例如版本名 `1.0.1` 对应标签 `v1.0.1`。`Android Release` 会检查标签属于 `main` 历史、重新运行完整 CI、确认 APK 版本与标签一致、签名并创建 GitHub Release（已有 Release 则更新 APK 和校验附件）。它不会部署服务器。
+
+仓库 Secrets：`ANDROID_KEYSTORE_BASE64`（密钥库文件的 Base64）、`ANDROID_KEY_ALIAS`、`ANDROID_STORE_PASSWORD`、`ANDROID_KEY_PASSWORD`。必须沿用现有发布密钥，不要每次生成新密钥。签名仅在独立发布任务中进行，密钥临时文件会清除。
+
+也可以手动运行 `Android Release`，选择已有标签；`publish=false` 默认只验证并生成签名 Artifact，`publish=true` 才更新 GitHub Release。现有 `v1.0.0` 无需移动标签即可试运行。
+
 ## 本地验收
 
 测试服务器仅使用内存模拟数据、现有静态页面，不读取 `.env`，不连接数据库或生产 API：

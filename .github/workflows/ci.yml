@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      revision:
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    name: Backend and web regressions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      mariadb:
+        image: mariadb:10.11
+        env:
+          MARIADB_DATABASE: kanban_test
+          MARIADB_USER: kanban
+          MARIADB_PASSWORD: kanban
+          MARIADB_ROOT_PASSWORD: ci-only-root
+        ports:
+          - 3307:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.revision || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+          cache: pip
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+      - name: Install Python and browser dependencies
+        run: |
+          python -m pip install -r requirements.txt playwright
+          python -m playwright install --with-deps chromium
+          python -c 'from playwright.sync_api import sync_playwright; p = sync_playwright().start(); print("CHROMIUM_PATH=" + p.chromium.executable_path); p.stop()' >> "$GITHUB_ENV"
+      - name: Backend API tests (isolated CI database)
+        run: python -m pytest -q
+      - name: Web unit regressions
+        run: node --test tests/*.test.mjs
+      - name: Browser startup regressions
+        run: python tests/startup_browser.py
+      - name: Android QA server boundary regressions
+        run: python -m unittest discover -s android/qa -p test_server.py
+
+  android:
+    name: Android build, unit tests and lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.revision || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+          cache-dependency-path: |
+            android/**/*.gradle
+            android/gradle/wrapper/gradle-wrapper.properties
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+      - name: Install pinned Android platform and build tools
+        run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+      - name: Build and verify both variants
+        run: bash android/gradlew -p android --no-daemon assembleDebug assembleRelease testDebugUnitTest lintDebug lintRelease
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: android-apks
+          path: android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: android-reports
+          path: android/app/build/reports/
+          retention-days: 14
