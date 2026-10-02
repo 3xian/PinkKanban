@@ -169,6 +169,8 @@ run.bat
 
 单页应用，`#/` 路由解析到 `projects`、`board/{id}`、`tasks`、`notifications`、`settings`、`account` 六个视图，`hashchange` 驱动重绘。看板拖拽基于 Pointer Events：鼠标按住即拖，触屏长按 280ms 进入拖拽；筛选开启时禁用拖拽，避免按可见子集算出的落点错位。卡片详情在右侧抽屉里做乐观更新，标题、描述、截止日期失焦即保存。`Esc` 依次关闭弹层、抽屉、侧边栏。
 
+侧栏「我的任务」和移动端底部「任务」共用 `static/js/icons.js` 中的任务清单 SVG 图标。
+
 ## 测试
 
 ```bash

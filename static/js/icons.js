@@ -3,6 +3,7 @@ const PATHS = {
   bell: '<path d="M6 9a6 6 0 1 1 12 0c0 7 3 7 3 7H3s3 0 3-7"/><path d="M10 19a2 2 0 0 0 4 0"/>',
   search: '<circle cx="11" cy="11" r="6"/><path d="m20 20-3.5-3.5"/>',
   board: '<rect x="3" y="4" width="5" height="16" rx="1.4"/><rect x="10" y="4" width="5" height="10" rx="1.4"/><rect x="17" y="4" width="4" height="7" rx="1.4"/>',
+  tasks: '<path d="m3 6 2 2 3-3M11 7h10M3 13l2 2 3-3M11 14h10M11 21h10"/>',
   check: '<path d="m5 12 5 5L20 7"/>',
   close: '<path d="M6 6l12 12M18 6 6 18"/>',
   menu: '<path d="M4 7h16M4 12h16M4 17h10"/>',
