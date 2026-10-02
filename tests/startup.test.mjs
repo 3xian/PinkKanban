@@ -73,12 +73,18 @@ test('projects reuse is initial-only; later and archived views refresh', async (
   assert.equal(renders, 3);
 });
 
-function startupContext({ imported, sheet = true } = {}) {
+function startupContext({ imported, autoLoad = true } = {}) {
   const callbacks = {}, timers = new Map();
   const message = { textContent: 'loading', setAttribute: (key, value) => { message[key] = value; } };
   const anchor = { addEventListener: (name, fn) => { anchor[name] = fn; } };
   const fallback = { querySelector: () => anchor };
-  const styles = { sheet, media: 'print', addEventListener: (name, fn) => { callbacks[name] = fn; } };
+  const styles = {
+    sheet: {}, media: 'print', addEventListener: (name, fn) => { callbacks[name] = fn; },
+    set href(value) {
+      this.requestedHref = value;
+      if (autoLoad) queueMicrotask(() => callbacks.load());
+    },
+  };
   const app = { replaceChildren: (node) => { app.child = node; } };
   const head = [];
   let boots = 0, reloads = 0;
@@ -97,10 +103,11 @@ function startupContext({ imported, sheet = true } = {}) {
   return { message, styles, callbacks, timers, app, fallback, anchor, head, boots: () => boots, reloads: () => reloads };
 }
 
-test('cached stylesheet activates and fonts load only after boot', async () => {
+test('stylesheet activates on load and fonts load only after boot', async () => {
   const ctx = startupContext();
   await flush();
   assert.equal(ctx.styles.media, 'all');
+  assert.equal(ctx.styles.requestedHref, '/static/css/app.css');
   assert.equal(ctx.boots(), 1);
   assert.equal(ctx.head.length, 1);
   assert.equal(ctx.timers.size, 0);
@@ -116,7 +123,10 @@ test('failed asset restores visible fallback and never boots', async () => {
 });
 
 test('stylesheet failure does not render unstyled application', async () => {
-  const ctx = startupContext({ sheet: false });
+  const ctx = startupContext({ autoLoad: false });
+  await flush();
+  assert.equal(ctx.styles.media, 'print');
+  assert.equal(ctx.boots(), 0);
   ctx.callbacks.error();
   await flush();
   assert.equal(ctx.message.role, 'alert');

@@ -15,7 +15,8 @@ function waitForStyles() {
     };
     styles.addEventListener("load", loaded, { once: true });
     styles.addEventListener("error", () => reject(new Error("页面样式加载失败，请重新加载。")), { once: true });
-    if (styles.sheet) loaded();
+    // Start loading only after listeners exist; sheet presence does not prove success.
+    styles.href = "/static/css/app.css";
   });
 }
 
