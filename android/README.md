@@ -38,7 +38,7 @@ GitHub Actions 的 `CI` 在分支 push、PR 和手动运行时检查后端 API�
 
 仓库 Secrets：`ANDROID_KEYSTORE_BASE64`（密钥库文件的 Base64）、`ANDROID_KEY_ALIAS`、`ANDROID_STORE_PASSWORD`、`ANDROID_KEY_PASSWORD`。必须沿用现有发布密钥，不要每次生成新密钥。签名仅在独立发布任务中进行，密钥临时文件会清除。
 
-也可以手动运行 `Android Release`，选择已有标签；`publish=false` 默认只验证并生成签名 Artifact，`publish=true` 才更新 GitHub Release。现有 `v1.0.0` 无需移动标签即可试运行。
+也可以手动运行 `Android Release`：`publish=false` 默认验证所选分支并生成签名 Artifact，标签字段指定预期 APK 版本；`publish=true` 则构建标签所指向的提交并更新 GitHub Release。试运行当前分支时可填 `v1.0.0`，无需移动现有标签。
 
 ## 本地验收
 
