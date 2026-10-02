@@ -1,0 +1,42 @@
+plugins { id 'com.android.application' }
+
+def serverUrl = providers.gradleProperty('kanbanUrl').getOrElse('https://kanban.faweisi.com')
+def server = new URI(serverUrl)
+if (!server.host || server.userInfo || server.query || server.fragment || !(server.path in ['', '/']) ||
+        !(server.scheme in ['https', 'http']) ||
+        (server.scheme == 'http' && !(server.host in ['localhost', '127.0.0.1', '10.0.2.2']))) {
+    throw new GradleException('kanbanUrl must be an HTTPS origin (local HTTP is allowed for debug only)')
+}
+
+android {
+    namespace 'com.faweisi.kanban'
+    compileSdk 36
+    defaultConfig {
+        applicationId 'com.faweisi.kanban'
+        minSdk 26
+        targetSdk 36
+        versionCode 1
+        versionName '1.0.0'
+        buildConfigField 'String', 'SERVER_URL', '"' + serverUrl.replaceAll('/$', '') + '"'
+    }
+    buildFeatures { buildConfig true }
+    buildTypes {
+        debug { applicationIdSuffix '.debug'; versionNameSuffix '-debug' }
+        release {
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt')
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+gradle.taskGraph.whenReady { graph ->
+    if (server.scheme != 'https' && graph.allTasks.any { it.name.toLowerCase().contains('release') }) {
+        throw new GradleException('Release requires HTTPS')
+    }
+}
+
+dependencies { testImplementation 'junit:junit:4.13.2' }

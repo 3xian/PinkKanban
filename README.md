@@ -49,6 +49,8 @@ flowchart LR
 
 ## 技术栈
 
+Android 客户端位于 [`android/`](android/README.md)，应用名 **看板**。使用原生 Android 容器接入现有移动端页面，提供会话保持、系统返回导航、附件上传/保存和连接重试；构建与本地验收见客户端文档。
+
 | 层 | 选型 |
 | --- | --- |
 | API | FastAPI（`app/main.py`），响应统一为紧凑 UTF-8 JSON |

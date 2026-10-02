@@ -1296,9 +1296,8 @@ document.addEventListener("focusout", (event) => {
   if (node.dataset.save === "due" && (node.value || null) !== (card.due_on || null)) run(null, () => saveCard({ due_on: node.value || null }));
 });
 
-document.addEventListener("keydown", (event) => {
-  if (event.key !== "Escape") return;
-  if (document.querySelector(".filter-trigger.is-open")) { closeFilterPops(); return; }
+function handleBack() {
+  if (document.querySelector(".filter-trigger.is-open")) { closeFilterPops(); return true; }
   if (state.modal) {
     state.modal = null;
     paintModal();
@@ -1306,7 +1305,15 @@ document.addEventListener("keydown", (event) => {
   else if (state.sidebar) {
     state.sidebar = false;
     render();
-  }
+  } else return false;
+  return true;
+}
+
+// A page-owned contract used by the Android container; exposes no native capabilities.
+window.kanbanNavigation = Object.freeze({ handleBack });
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") handleBack();
 });
 
 async function saveCard(body) {
