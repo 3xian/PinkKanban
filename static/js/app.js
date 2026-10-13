@@ -823,77 +823,92 @@ function paintDrawer() {
   }
   const card = data.card;
   const edit = card.can_edit;
-  const scroll = drawer.querySelector(".drawer-panel")?.scrollTop || 0;
+  const saved = {
+    panel: drawer.querySelector(".drawer-panel")?.scrollTop || 0,
+    side: drawer.querySelector(".drawer-side")?.scrollTop || 0,
+    desc: drawer.querySelector(".desc-input, .section-desc .md")?.scrollTop || 0,
+  };
   const labels = state.board?.labels || [];
   const members = state.board?.members || [];
   drawer.hidden = false;
   drawer.replaceChildren(
     el("button", { class: "drawer-backdrop", "data-act": "close-drawer", "aria-label": "关闭" }),
     el("article", { class: "drawer-panel" },
-        el("div", { class: "drawer-top" },
-          el("i", { class: "sheet-handle", "aria-hidden": "true" }),
-          el("div", { class: "drawer-top-row" },
-            el("span", { class: "crumb", text: [state.board?.project?.name, columnName(card.column_id)].filter(Boolean).join(" / ") }),
-            el("button", { class: "icon-btn", "data-act": "close-drawer", "aria-label": "关闭" }, glyph("close")),
+      el("div", { class: "drawer-top" },
+        el("i", { class: "sheet-handle", "aria-hidden": "true" }),
+        el("div", { class: "drawer-top-row" },
+          el("span", { class: "crumb", text: [state.board?.project?.name, columnName(card.column_id)].filter(Boolean).join(" / ") }),
+          el("button", { class: "icon-btn", "data-act": "close-drawer", "aria-label": "关闭" }, glyph("close")),
+        ),
+        edit ? el("input", { class: "drawer-title", "data-save": "title", value: card.title, "aria-label": "标题" }) : el("h2", { class: "drawer-title", text: card.title }),
+      ),
+      el("div", { class: "drawer-body" },
+        el("div", { class: "section section-desc" },
+          el("h3", { text: "描述" }),
+          edit ? el("textarea", { class: "desc-input", "data-save": "description", text: card.description || "", "aria-label": "描述" }) : markdown(card.description || "没有描述"),
+        ),
+        el("div", { class: "drawer-side" },
+          el("div", { class: "props" },
+            el("div", { class: "prop" },
+              el("span", { class: "prop-k", text: "优先级" }),
+              el("div", { class: "prio" }, ...PRIORITIES.map(([value, label]) => el("button", { type: "button", class: card.priority === value ? "is-on" : "", "data-act": "priority", "data-value": value, disabled: !edit, text: label }))),
+            ),
+            el("div", { class: "prop" },
+              el("span", { class: "prop-k", text: "截止日期" }),
+              el("label", { class: "field" }, el("input", { type: "date", "data-save": "due", value: card.due_on || "", disabled: !edit, "aria-label": "截止日期" })),
+            ),
+            el("div", { class: "prop" },
+              el("span", { class: "prop-k", text: "状态" }),
+              el("label", { class: "check" }, el("input", { type: "checkbox", "data-act": "done", checked: card.done, disabled: !edit }), "完成"),
+            ),
+            el("div", { class: "prop prop-top" },
+              el("span", { class: "prop-k", text: "指派" }),
+              el("div", { class: "assignees" }, ...members.map((person) => {
+                const on = card.assignee_ids.includes(person.id);
+                return el("button", { type: "button", class: on ? "assignee is-on" : "assignee", "data-act": "toggle-assignee", "data-id": person.id, disabled: !edit }, avatar(person), person.display_name);
+              })),
+            ),
+            el("div", { class: "prop" },
+              el("span", { class: "prop-k", text: "封面" }),
+              el("div", { class: "swatches" }, el("button", { type: "button", class: card.cover_color ? "swatch" : "swatch is-on", "data-act": "cover", "data-color": "", text: "无", disabled: !edit }), ...COLORS.map((color) => {
+                const button = el("button", { type: "button", class: card.cover_color === color ? "swatch is-on" : "swatch", "data-act": "cover", "data-color": color, disabled: !edit, "aria-label": color });
+                button.style.background = color;
+                return button;
+              })),
+            ),
           ),
-          edit ? el("input", { class: "drawer-title", "data-save": "title", value: card.title, "aria-label": "标题" }) : el("h2", { class: "drawer-title", text: card.title }),
-        ),
-      el("div", { class: "props" },
-        el("div", { class: "prop" },
-          el("span", { class: "prop-k", text: "优先级" }),
-          el("div", { class: "prio" }, ...PRIORITIES.map(([value, label]) => el("button", { type: "button", class: card.priority === value ? "is-on" : "", "data-act": "priority", "data-value": value, disabled: !edit, text: label }))),
-        ),
-        el("div", { class: "prop" },
-          el("span", { class: "prop-k", text: "截止日期" }),
-          el("label", { class: "field" }, el("input", { type: "date", "data-save": "due", value: card.due_on || "", disabled: !edit, "aria-label": "截止日期" })),
-        ),
-        el("div", { class: "prop" },
-          el("span", { class: "prop-k", text: "状态" }),
-          el("label", { class: "check" }, el("input", { type: "checkbox", "data-act": "done", checked: card.done, disabled: !edit }), "完成"),
-        ),
-        el("div", { class: "prop prop-top" },
-          el("span", { class: "prop-k", text: "指派" }),
-          el("div", { class: "assignees" }, ...members.map((person) => {
-            const on = card.assignee_ids.includes(person.id);
-            return el("button", { type: "button", class: on ? "assignee is-on" : "assignee", "data-act": "toggle-assignee", "data-id": person.id, disabled: !edit }, avatar(person), person.display_name);
-          })),
-        ),
-        el("div", { class: "prop" },
-          el("span", { class: "prop-k", text: "封面" }),
-          el("div", { class: "swatches" }, el("button", { type: "button", class: card.cover_color ? "swatch" : "swatch is-on", "data-act": "cover", "data-color": "", text: "无", disabled: !edit }), ...COLORS.map((color) => {
-            const button = el("button", { type: "button", class: card.cover_color === color ? "swatch is-on" : "swatch", "data-act": "cover", "data-color": color, disabled: !edit, "aria-label": color });
-            button.style.background = color;
+          el("div", { class: "section" }, el("h3", { text: "标签" }), el("div", { class: "pills" }, ...labels.map((label) => {
+            const on = card.label_ids.includes(label.id);
+            const button = el("button", { type: "button", class: on ? "pill is-on" : "pill", "data-act": "toggle-label", "data-id": label.id, disabled: !edit, text: label.name });
+            button.style.setProperty("--c", safeColor(label.color));
             return button;
-          })),
+          })), edit ? el("form", { "data-form": "label", class: "composer" }, el("input", { name: "name", placeholder: "新标签", required: true }), el("button", { class: "btn-tiny", text: "添加" })) : null),
+          el("div", { class: "section" }, el("h3", { text: "清单" }), ...data.checklists.map(checklistBlock), edit ? el("form", { "data-form": "checklist", class: "composer" }, el("input", { name: "title", placeholder: "清单标题", required: true }), el("button", { class: "btn-tiny", text: "添加" })) : null),
+          el("div", { class: "section" }, el("h3", { text: "附件" }), ...data.attachments.map(fileRow), edit ? el("input", { class: "file-input", type: "file", "data-act": "upload" }) : null),
+          el("div", { class: "section" },
+            el("h3", { text: "评论" }),
+            ...data.comments.map((comment) => el("article", { class: "comment" },
+              el("header", {}, comment.user ? avatar(comment.user) : null, el("strong", { text: comment.user?.display_name || "成员" }), el("span", { class: "muted", text: relative(comment.created_at) + (comment.edited ? " · 已编辑" : "") }), comment.mine ? el("button", { type: "button", class: "icon-btn icon-btn-sm check-remove", "data-act": "delete-comment", "data-id": comment.id, "aria-label": "删除评论" }, glyph("trash")) : null),
+              el("p", { text: comment.body }),
+            )),
+            edit ? el("form", { "data-form": "comment", class: "comment-form" }, el("textarea", { name: "body", placeholder: "写评论，用 @显示名 提及成员", required: true }), el("button", { class: "btn-primary btn-tiny", text: "发送" })) : null,
+          ),
+          el("div", { class: "section" }, el("h3", { text: "动态" }), activityList(data.activity)),
+          edit ? el("div", { class: "more-actions" },
+            el("button", { class: "btn-ghost", "data-act": "duplicate", text: "复制" }),
+            el("button", { class: "btn-ghost", "data-act": card.archived ? "restore-card" : "archive-card", text: card.archived ? "恢复" : "归档" }),
+            el("button", { class: "btn-danger", "data-act": "delete-card", text: "删除" }),
+          ) : null,
         ),
       ),
-      el("div", { class: "section" }, el("h3", { text: "描述" }), edit ? el("textarea", { class: "desc-input", "data-save": "description", text: card.description || "", "aria-label": "描述" }) : markdown(card.description || "没有描述")),
-      el("div", { class: "section" }, el("h3", { text: "标签" }), el("div", { class: "pills" }, ...labels.map((label) => {
-        const on = card.label_ids.includes(label.id);
-        const button = el("button", { type: "button", class: on ? "pill is-on" : "pill", "data-act": "toggle-label", "data-id": label.id, disabled: !edit, text: label.name });
-        button.style.setProperty("--c", safeColor(label.color));
-        return button;
-      })), edit ? el("form", { "data-form": "label", class: "composer" }, el("input", { name: "name", placeholder: "新标签", required: true }), el("button", { class: "btn-tiny", text: "添加" })) : null),
-      el("div", { class: "section" }, el("h3", { text: "清单" }), ...data.checklists.map(checklistBlock), edit ? el("form", { "data-form": "checklist", class: "composer" }, el("input", { name: "title", placeholder: "清单标题", required: true }), el("button", { class: "btn-tiny", text: "添加" })) : null),
-      el("div", { class: "section" }, el("h3", { text: "附件" }), ...data.attachments.map(fileRow), edit ? el("input", { class: "file-input", type: "file", "data-act": "upload" }) : null),
-      el("div", { class: "section" },
-        el("h3", { text: "评论" }),
-        ...data.comments.map((comment) => el("article", { class: "comment" },
-          el("header", {}, comment.user ? avatar(comment.user) : null, el("strong", { text: comment.user?.display_name || "成员" }), el("span", { class: "muted", text: relative(comment.created_at) + (comment.edited ? " · 已编辑" : "") }), comment.mine ? el("button", { type: "button", class: "icon-btn icon-btn-sm check-remove", "data-act": "delete-comment", "data-id": comment.id, "aria-label": "删除评论" }, glyph("trash")) : null),
-          el("p", { text: comment.body }),
-        )),
-        edit ? el("form", { "data-form": "comment", class: "comment-form" }, el("textarea", { name: "body", placeholder: "写评论，用 @显示名 提及成员", required: true }), el("button", { class: "btn-primary btn-tiny", text: "发送" })) : null,
-      ),
-      el("div", { class: "section" }, el("h3", { text: "动态" }), activityList(data.activity)),
-      edit ? el("div", { class: "more-actions" },
-        el("button", { class: "btn-ghost", "data-act": "duplicate", text: "复制" }),
-        el("button", { class: "btn-ghost", "data-act": card.archived ? "restore-card" : "archive-card", text: card.archived ? "恢复" : "归档" }),
-        el("button", { class: "btn-danger", "data-act": "delete-card", text: "删除" }),
-      ) : null,
     ),
   );
   const panel = drawer.querySelector(".drawer-panel");
-  if (panel) panel.scrollTop = scroll;
+  const side = drawer.querySelector(".drawer-side");
+  const desc = drawer.querySelector(".desc-input, .section-desc .md");
+  if (panel) panel.scrollTop = saved.panel;
+  if (side) side.scrollTop = saved.side;
+  if (desc) desc.scrollTop = saved.desc;
 }
 
 function columnName(id) {
