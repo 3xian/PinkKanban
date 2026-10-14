@@ -1,205 +1,258 @@
-# 看板
+# PinkKanban · 看板
 
-看板适合小团队把一件事从开始跟到交付：产品排期、设计改稿、客户项目、外包协作，以及几个人一起推进的日常工作。一块板分成几列阶段，一件事一张卡片，写上负责人、截止日期和步骤，讨论和附件留在这张卡片上，进度变了就拖到下一列。比在群里交代清楚，新消息不会把旧进度冲掉，谁在做、哪天到期始终在板上。比共享表格省事，不用改单元格来表示状态，评论和文件也不用另找地方。加人必须对方同意，只能看的人改不了板。
+面向小团队的自托管看板，把任务、负责人、截止日期、讨论和附件放在同一张卡片里，从待办一路跟到交付。
 
-后端 FastAPI + SQLAlchemy 2 + MariaDB，前端是无构建步骤的原生 ES Module + CSS，没有打包器、没有 Node 依赖。
+适合产品排期、设计改稿、客户项目和日常协作：拖动卡片更新阶段，不必在群聊里翻找进度，也不必用表格单元格维护状态。邀请需对方接受，项目支持只读访问。
 
-## 功能
+**FastAPI + MariaDB · 原生 JavaScript，无前端构建步骤 · Web 与 Android 客户端 · MIT**
 
-### 按角色能做什么
+[快速开始](#快速开始) · [功能与权限](#功能与权限) · [配置](#配置) · [部署与升级](#部署与升级) · [开发与测试](#开发与测试) · [API](#api)
 
-四种角色，权限从高到低：`owner` > `admin` > `member` > `viewer`。项目创建者自动是 `owner`。
+## 功能与权限
 
-```mermaid
-flowchart LR
-    subgraph O["owner 拥有者"]
-        O1["移交拥有者<br/>删除项目"]
-    end
-    subgraph A["admin 管理员"]
-        A1["发邀请 / 撤回邀请<br/>改成员角色 / 移除成员"]
-    end
-    subgraph M["member 成员"]
-        M1["建列表 / 建卡片<br/>编辑卡片内容<br/>拖卡片与列表排序<br/>评论 / 上传附件"]
-    end
-    subgraph V["viewer 只读"]
-        V1["看板与卡片<br/>项目活动流"]
-    end
-    O1 --> A1 --> M1 --> V1
-```
+- **看板协作**：列表与卡片拖拽排序、WIP 提示、项目归档与恢复。
+- **任务跟进**：Markdown 描述、优先级、截止日期、主负责人、参与人、标签、清单、完成标记、归档与复制。
+- **集中沟通**：卡片评论、附件、项目与卡片活动记录；站内邀请和通知。
+- **快速定位**：关键词、我的、延期、标签、优先级、完成状态与归档筛选；跨项目「我的任务」。
+- **移动端**：响应式网页、触屏长按拖拽；[Android 客户端](android/README.md)提供会话保持、系统返回导航、附件上传与保存、连接重试。
 
-每级都包含下一级的全部能力。区分点：
+### 角色权限
 
-- **owner**：唯一能移交拥有者和删除项目的角色。不能改自己的角色、不能被移除，退出项目前必须先移交。
-- **admin**：管人不管内容结构——发邀请、撤回邀请、调整成员角色、移除成员。删除别人的评论和附件也需要 `admin`。
-- **member**：干活的默认角色。列表、卡片、标签、清单、评论、附件都能增删改。
-- **viewer**：只能读。看板、卡片详情、活动流可见，任何写操作返回 403。
+项目创建者自动成为 `owner`。权限逐级包含：`owner` > `admin` > `member` > `viewer`。
 
-### 看板与卡片
+| 角色 | 能做什么 | 边界 |
+| --- | --- | --- |
+| `owner` 拥有者 | 管理员的全部能力；移交拥有者、删除项目 | 不能修改自己的角色或被移除；退出前必须移交 |
+| `admin` 管理员 | 成员的全部能力；邀请与撤回邀请、调整角色、移除成员 | 删除他人的评论与附件需要此级权限 |
+| `member` 成员 | 管理列表、卡片、标签和清单；评论、上传附件 | 不能管理项目成员 |
+| `viewer` 只读 | 查看看板、卡片详情和活动流 | 写操作返回 403 |
 
-- **列表**：增删改名、改在制品上限（WIP）、拖拽排序；至少保留一个列表，删除列表时卡片会并入相邻列表。WIP 超出时只把列表计数标成强调色，服务端不阻止移动。
-- **卡片**：标题、描述（Markdown）、优先级（无/低/中/高/紧急）、截止日期、可选主负责人、封面色、完成标记、归档、复制；支持跨列与同列拖拽排序。主负责人最多一人，只能从当前项目成员里选，不改变 owner/admin/member/viewer 权限。指定后自动加入参与人；换人后原负责人仍是参与人；清空主负责人不会取消参与。
-- **卡片详情**：右侧抽屉分两列。左列是描述；右列是优先级、截止日期、主负责人、参与人、封面、标签、清单（含勾选进度）、评论、附件和该卡片最近 30 条活动。窄屏收成单列。主负责人用下拉选择，变更立即保存；参与人区域不重复展示主负责人。看板上有主负责人时，卡片底部用头像描边标出，不另起文字行。
-- **筛选**：关键词、我的、延期、标签、优先级、隐藏完成、已归档。筛选开启时禁用拖拽，避免按可见子集算出的落点错位。「我的」仍按参与人过滤；主负责人已在参与人中。
-- **我的任务**：跨项目汇总指派给你的卡片，`?q=` 按标题过滤。主负责人同时是参与人，因此仍会出现在这里。
-- **活动流**：记录创建、移动、指派、主负责人、评论、成员变动等动作。
+### 使用边界
 
-### 项目与配额
+- **主负责人最多一人**，只能选当前项目成员，不改变项目权限。指定后自动加入参与人；换人或清空主负责人不会移除原参与人。「我的」和「我的任务」仍按参与人计算。
+- **WIP 是提醒，不是硬限制**：超出时突出显示列表计数，服务端不阻止移动。项目至少保留一个列表；删除列表时卡片并入相邻列表。
+- **筛选开启时禁用拖拽**，避免按可见子集计算排序。鼠标按住即拖，触屏长按 280ms 进入拖拽。
+- **卡片详情即时保存**：标题、描述与截止日期失焦保存，主负责人变更立即保存。窄屏抽屉改为单列；卡片显示主负责人头像描边，详情不在参与人区域重复展示主负责人。
+- **Android 是在线 WebView 客户端**，不是独立离线看板；不提供离线编辑或后台系统推送。构建、服务地址配置与验收见[客户端文档](android/README.md)。
 
-新建 / 改名 / 换色 / 归档 / 恢复 / 删除 / 移交。新建成功后给创建者发一条站内通知。每人每天最多新建 `DAILY_PROJECT_LIMIT` 个项目（默认 30），按 `APP_TIMEZONE` 的自然日计算，超出返回 429。
+## 快速开始
 
-## 技术栈
+以下命令均在仓库根目录执行。Docker Compose **只启动数据库**，Web 服务通过 Python 单独启动。
 
-Android 客户端位于 [`android/`](android/README.md)，应用名 **看板**。使用原生 Android 容器接入现有移动端页面，提供会话保持、系统返回导航、附件上传/保存和连接重试；构建与本地验收见客户端文档。
+### 1. 准备环境与配置
 
-| 层 | 选型 |
-| --- | --- |
-| API | FastAPI（`app/main.py`），响应统一为紧凑 UTF-8 JSON |
-| ORM | SQLAlchemy 2.0 + PyMySQL |
-| 数据库 | MariaDB 10.11（Docker，宿主端口 3307） |
-| 前端 | 原生 ES Module（`static/js/`）+ 单文件 CSS，无构建步骤 |
-| 密码 | `hashlib.scrypt`（`n=2**14`） |
-| 会话 | 自签名 token 存 Cookie，HMAC-SHA256 |
+需要 Python（建议 3.12，与 CI 一致）、Docker 和 Docker Compose。日常运行不需要 Node.js，也没有前端打包步骤。
 
-## 运行
-
-数据库用仓库里的 Docker MariaDB，映射到 **3307**，不占用本机 3306。
+Linux / macOS：
 
 ```bash
-docker compose up -d
+cp .env.example .env
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
 ```
 
-Windows 下用项目虚拟环境启动（缺少 `.venv` 时会自动创建并装依赖）：
+Windows（命令提示符）：
+
+```bat
+copy .env.example .env
+```
+
+编辑 `.env`：设置自己的 `SECRET_KEY`，并填写 SMTP 配置。
+
+> **注册需要邮箱验证码。** `SMTP_HOST` 为空时发送验证码接口返回 503，页面虽能打开，新用户仍无法注册。常见配置为端口 587、`SMTP_SSL=0`、`SMTP_TLS=1`；发件人默认使用 `SMTP_USER`，也可显式设置 `SMTP_FROM`。不要在日常运行中开启测试专用的 `MAIL_CAPTURE`。
+
+配置读取自 `.env`，但不会覆盖已有环境变量。完整选项见[配置](#配置)。
+
+### 2. 启动数据库
+
+```bash
+docker compose up -d --wait
+```
+
+仓库使用 MariaDB 10.11，宿主端口为 **3307**，不占用 3306；数据保存在 Docker 命名卷 `kanban_db` 中。默认连接串已写入 `.env.example`。
+
+### 3. 启动 Web 服务
+
+Linux / macOS（已激活上面的虚拟环境）：
+
+```bash
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+Windows：
 
 ```bat
 run.bat
 ```
 
-或等价命令：
+`run.bat` 在缺少 `.venv\Scripts\python.exe` 时自动创建虚拟环境并安装依赖；已有环境更新依赖时，运行 `.venv\Scripts\python.exe -m pip install -r requirements.txt`。
+
+打开 <http://127.0.0.1:8000>，获取邮箱验证码并注册，然后创建项目、添加卡片、邀请协作者。创建项目成功后会收到一条站内通知。
+
+另开终端检查服务和数据库连接：
 
 ```bash
-.venv/Scripts/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+curl http://127.0.0.1:8000/api/health
 ```
 
-打开 <http://127.0.0.1:8000>。启动时 `lifespan` 会建库（`DATABASE_URL` 里的库不存在则自动 `CREATE DATABASE`）并 `create_all` 建表。已有库不会被 `create_all` 改表，启动时再执行可重复的结构升级：目前只给 `cards` 补可空列 `responsible_user_id`、索引和外键，不改已有行。升级在服务启动时完成，改完后端需要重启 `pinkkanban.service`。
+正常响应为 `{"ok":true}`。交互式 API 文档位于 <http://127.0.0.1:8000/docs>。
 
-首次运行前复制 `.env.example` 为 `.env`；`app/config.py` 会读取 `.env`，但**不会覆盖**已存在的环境变量。
+### 常见启动问题
+
+| 现象 | 检查项 |
+| --- | --- |
+| 数据库连接失败 | `docker compose ps` 是否健康；3307 是否被占用；`DATABASE_URL` 是否与数据库账号一致 |
+| 验证码返回 503 | `SMTP_HOST` 是否填写；SMTP 凭据、发件人、端口与 SSL / STARTTLS 是否匹配 |
+| 改了 `.env` 仍未生效 | 重启 Web 服务；检查同名环境变量，它们优先于 `.env` |
+| 本地 HTTP 登录无法保持 | 本地使用 `APP_SECURE_COOKIE=0`；`1` 仅用于 HTTPS |
 
 ## 配置
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
-| `DATABASE_URL` | `mysql+pymysql://kanban:kanban@127.0.0.1:3307/kanban?charset=utf8mb4` | 库名缺失时报错；库不存在时自动创建 |
-| `SECRET_KEY` | `dev-only-change-me` | 会话签名密钥，**生产必须更换** |
-| `APP_TIMEZONE` | `Asia/Shanghai` | 决定每日建项目配额的自然日边界 |
-| `DAILY_PROJECT_LIMIT` | `30` | 非整数回退 30，最小 1 |
-| `APP_SECURE_COOKIE` | `0` | 置 `1` 给会话 Cookie 加 `Secure`，仅在 HTTPS 下开启 |
-| `SMTP_HOST` | 空 | 发注册验证码的 SMTP 主机；为空时发送接口返回 503 |
+| `DATABASE_URL` | `mysql+pymysql://kanban:kanban@127.0.0.1:3307/kanban?charset=utf8mb4` | 必须包含库名；库不存在时尝试自动创建，账号需有相应权限 |
+| `SECRET_KEY` | `dev-only-change-me` | 会话签名密钥；必须替换为自己的长随机值，不能沿用示例值 |
+| `APP_TIMEZONE` | `Asia/Shanghai` | 每日项目配额的自然日边界 |
+| `DAILY_PROJECT_LIMIT` | `30` | 每人每天最多新建项目数；非整数回退 30，最小 1，超限返回 429 |
+| `APP_SECURE_COOKIE` | `0` | `1` 为会话 Cookie 添加 `Secure`，仅在 HTTPS 下开启 |
+| `SMTP_HOST` | 空 | 注册验证码 SMTP 主机；为空时发送接口返回 503 |
 | `SMTP_PORT` | `587` | SMTP 端口 |
 | `SMTP_USER` | 空 | SMTP 登录用户 |
 | `SMTP_PASSWORD` | 空 | SMTP 登录口令 |
 | `SMTP_FROM` | 同 `SMTP_USER` | 发件人地址 |
-| `SMTP_SSL` | `0` | 置 `1` 使用隐式 SSL（常见于 465） |
-| `SMTP_TLS` | `1` | 非 SSL 时是否 STARTTLS；`0` 关闭 |
+| `SMTP_SSL` | `0` | `1` 使用隐式 SSL，常见于端口 465 |
+| `SMTP_TLS` | `1` | 非 SSL 时使用 STARTTLS；`0` 关闭 |
+
+## 部署与升级
+
+仓库的 Compose 配置是**开发数据库配置，不是完整的生产部署方案**。
+
+- **更换凭据**：替换 `SECRET_KEY`、MariaDB root 与 `kanban` 密码，同步修改 `DATABASE_URL`。Compose 中的口令为明文开发口令；已有数据卷不会因修改初始化环境变量而自动改密码。
+- **限制数据库暴露**：Compose 的 `3307:3306` 未限定监听地址。生产环境应将数据库限制在本机或私有网络，不直接暴露公网。
+- **使用 HTTPS**：由反向代理提供 HTTPS，设置 `APP_SECURE_COOKIE=1`；本地启动命令仅监听 `127.0.0.1`。
+- **配置发信服务**：SMTP 是注册流程的必要条件，不能以测试捕获模式代替。
+- **保持单 worker / 单实例假设**：接口限流在进程内存中计数，多 worker 或多副本不会共享计数；扩展前需使用共享限流存储。
+- **持久化与备份**：数据库在 `kanban_db` 卷，附件在仓库 `uploads/`。两者都需备份；附件目录需可写，容器重建或多副本部署需持久化 / 共享存储。
+
+启动会检查数据库，必要时尝试 `CREATE DATABASE`，再通过 `create_all` 创建缺失表。**`create_all` 不会修改已有表结构**；当前启动升级会为 `cards` 补充可空的 `responsible_user_id` 列、索引和外键，不改已有行。数据库账号需有相应 DDL 权限；升级前备份，更新后重启后端。使用名为 `pinkkanban.service` 的 systemd 服务时，重启该服务。
+
+### 限额与附件
+
+| 项目 | 上限 |
+| --- | --- |
+| 每人每日新建项目 | `DAILY_PROJECT_LIMIT`，默认 30 |
+| 每项目列表 / 卡片 / 标签 | 40 / 4000 / 30 |
+| 每卡片清单 / 评论 | 20 / 1000 |
+| 每清单条目 | 100 |
+| 单个附件 | 8 MB |
+
+附件扩展名白名单见 [`app/constants.py`](app/constants.py)。展示名与存储名分离，落盘名为随机 hex 加原扩展名；事务提交后才删除文件，回滚不删除。
+
+接口按来源 IP 限流：注册 10 次/小时、登录 20 次/10 分钟、邮箱查询 30 次/分钟、验证码 8 次/小时。同一邮箱 60 秒内不能再次获取验证码；验证码 10 分钟有效，连续错误 5 次作废。
+
+## 开发与测试
+
+### 技术栈与目录
+
+| 层 | 选型 / 入口 |
+| --- | --- |
+| API | FastAPI，[`app/main.py`](app/main.py)，紧凑 UTF-8 JSON 响应 |
+| ORM / 数据库 | SQLAlchemy 2 + PyMySQL / MariaDB 10.11 |
+| 前端 | [`static/js/`](static/js/) 原生 ES Module + CSS，无打包器 |
+| 密码 / 会话 | `hashlib.scrypt`（`n=2**14`）/ HMAC-SHA256 签名 token，存于 Cookie |
+| Android | [`android/`](android/README.md)，原生 Java + WebView |
+| 测试 / 数据库初始化 | [`tests/`](tests/) / [`deploy/initdb/`](deploy/initdb/) |
+
+前端为 hash 路由单页应用：项目、看板、我的任务、通知、设置、账号六个视图。通知单条已读只减少该条未读计数，「全部已读」清除剩余未读；`Esc` 依次关闭弹层、抽屉、侧边栏。任务入口共用 `static/js/icons.js` 的任务清单 SVG 图标。
+
+### 后端测试
+
+先按[快速开始](#快速开始)准备虚拟环境与数据库，再执行：
+
+```bash
+python -m pytest
+```
+
+Windows 使用 `.venv\Scripts\python.exe -m pytest`。
+
+> **测试会删除测试库中的全部表。** `tests/conftest.py` 将 `DATABASE_URL` 覆盖为本机 3307 上的 `kanban_test`，每个用例前调用 `truncate_all()` 重建表，并清空限流和邮件捕获状态。不要将测试配置改成生产库，也不要让该端口指向生产数据库。
+
+`kanban_test` 由 [`deploy/initdb/01-test-db.sql`](deploy/initdb/01-test-db.sql) 在数据库卷首次初始化时创建并授权。已有卷不会重跑初始化脚本；缺少测试库时需手动创建并授予 `kanban` 用户权限，不要为此删除含有业务数据的卷。
+
+测试通过 `TestClient` 携带 `X-Kanban: 1`，使用 `MAIL_CAPTURE=1` 捕获验证码，不连接真实 SMTP。覆盖认证、请求头校验、验证码、看板初始化、邀请、角色权限、配额、附件、截止日期与主负责人等行为。
+
+### 前端与浏览器回归
+
+前端测试需要 Node.js（CI 使用 24），不影响日常运行：
+
+```bash
+node --test tests/*.test.mjs
+```
+
+浏览器回归是独立脚本，不由 pytest 自动收集。额外安装 Playwright 与 Chromium，通过 `CHROMIUM_PATH` 指定浏览器可执行文件：
+
+```bash
+python -m pip install playwright
+python -m playwright install chromium
+# 将 CHROMIUM_PATH 设置为本机 Chromium 可执行文件路径后运行：
+python tests/startup_browser.py
+```
+
+脚本只使用本地静态服务器与模拟 API，不访问数据库。Android 构建、QA 服务与设备验收见 [Android README](android/README.md)。GitHub Actions 的 [CI](.github/workflows/ci.yml) 执行后端、网页、浏览器、QA 边界检查及 Android 构建检查；[发布流程](.github/workflows/release.yml)负责签名 APK，不部署服务器。
 
 ## API
 
-**写操作必须带 `X-Kanban: 1` 请求头**。`app/main.py` 的中间件会对 `POST/PUT/PATCH/DELETE` 且路径以 `/api/` 开头的请求校验该头，缺失返回 403。这是一层便宜的 CSRF 防护：浏览器表单无法伪造自定义头。前端 `static/js/api.js` 统一带上。
+服务运行后通过 [`/docs`](http://127.0.0.1:8000/docs) 查看完整请求与响应模型。
 
-主要端点：
+**所有 `/api/` 下的 `POST`、`PUT`、`PATCH`、`DELETE` 请求必须携带 `X-Kanban: 1`，缺失返回 403。** 该自定义头用于 CSRF 防护，不代替登录和项目权限校验；前端 `static/js/api.js` 统一添加。
+
+<details>
+<summary>主要端点速查</summary>
+
+同一行中的缩写路径沿用该行第一个端点的资源前缀。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| POST | `/api/auth/register` `/login` `/logout` | 注册/登录/登出。注册必须带 6 位邮箱验证码 |
+| POST | `/api/auth/register`、`/login`、`/logout` | 注册、登录、登出；注册需 6 位邮箱验证码 |
 | POST | `/api/auth/code` | 向未注册邮箱发送验证码 |
-| GET PATCH | `/api/auth/me` | 读取/更新自己的资料 |
+| GET / PATCH | `/api/auth/me` | 读取 / 更新自己的资料 |
 | POST | `/api/auth/password` | 修改密码 |
-| GET | `/api/bootstrap` | 一次性拿用户、项目列表、未读数、配额 |
-| GET POST | `/api/projects` | 项目列表（`?archived=true` 看归档）/ 新建 |
-| GET PATCH DELETE | `/api/projects/{id}` | 详情 / 修改 / 删除 |
-| POST | `/api/projects/{id}/archive` `restore` `transfer` `leave` | 归档、恢复、移交、退出 |
+| GET | `/api/bootstrap` | 用户、项目列表、未读数、配额 |
+| GET / POST | `/api/projects` | 项目列表 / 新建；`?archived=true` 查看归档 |
+| GET / PATCH / DELETE | `/api/projects/{id}` | 详情 / 修改 / 删除 |
+| POST | `/api/projects/{id}/archive`、`restore`、`transfer`、`leave` | 归档、恢复、移交、退出 |
 | POST | `/api/projects/{id}/invites` | 发出邀请 |
 | POST | `/api/projects/{id}/invites/{note_id}/cancel` | 撤回邀请 |
-| PATCH DELETE | `/api/projects/{id}/members/{member_id}` | 改角色 / 移除成员 |
+| PATCH / DELETE | `/api/projects/{id}/members/{member_id}` | 修改角色 / 移除成员 |
 | GET | `/api/projects/{id}/activity` | 项目活动流 |
-| GET | `/api/projects/{id}/board` | 整块板：项目、角色、成员、标签、列表与卡片 |
-| POST | `/api/projects/{id}/columns` `cards` `labels` | 新建列表 / 卡片 / 标签 |
+| GET | `/api/projects/{id}/board` | 项目、角色、成员、标签、列表与卡片 |
+| POST | `/api/projects/{id}/columns`、`cards`、`labels` | 新建列表、卡片、标签 |
 | POST | `/api/projects/{id}/columns/reorder` | 列表排序 |
-| PATCH DELETE | `/api/columns/{id}` `/api/labels/{id}` | 改 / 删列表与标签 |
-| GET PATCH DELETE | `/api/cards/{id}` | 卡片详情 / 修改 / 删除。详情和看板卡片含 `responsible_user_id`。PATCH 传项目成员 id 设置主负责人，传 `null` 清空；不传则不动 |
-| POST | `/api/cards/{id}/move` `archive` `restore` `duplicate` | 移动、归档、恢复、复制。复制保留仍在项目中的主负责人和参与人 |
-| PUT | `/api/cards/{id}/labels` `assignees` | 全量替换标签 / 参与人。移除当前主负责人时同步清空该字段 |
-| POST | `/api/cards/{id}/checklists` `comments` `attachments` | 加清单 / 评论 / 附件 |
-| PATCH DELETE | `/api/checklists/{id}` `/api/checklist-items/{id}` `/api/comments/{id}` | 改删子资源 |
-| GET | `/api/attachments/{id}/file` | 下载；图片扩展名自动以 inline 方式返回，其余走 attachment |
-| GET | `/api/notifications` | 通知列表（最近 80 条） |
-| POST | `/api/notifications/{id}/accept` `reject` `read` | 处理邀请与已读 |
+| PATCH / DELETE | `/api/columns/{id}`、`/api/labels/{id}` | 修改 / 删除列表与标签 |
+| GET / PATCH / DELETE | `/api/cards/{id}` | 详情 / 修改 / 删除；主负责人字段 `responsible_user_id` 可设成员 id，`null` 清空，省略不变 |
+| POST | `/api/cards/{id}/move`、`archive`、`restore`、`duplicate` | 移动、归档、恢复、复制；复制保留仍在项目中的主负责人和参与人 |
+| PUT | `/api/cards/{id}/labels`、`assignees` | 全量替换标签 / 参与人；移除当前主负责人时同步清空该字段 |
+| POST | `/api/cards/{id}/checklists`、`comments`、`attachments` | 添加清单 / 评论 / 附件 |
+| PATCH / DELETE | `/api/checklists/{id}`、`/api/checklist-items/{id}`、`/api/comments/{id}` | 修改 / 删除子资源 |
+| GET | `/api/attachments/{id}/file` | 下载；图片扩展名使用 inline，其余使用 attachment |
+| GET | `/api/notifications` | 最近 80 条通知 |
+| POST | `/api/notifications/{id}/accept`、`reject`、`read` | 处理邀请 / 标记已读 |
 | POST | `/api/notifications/read-all` | 全部标记已读 |
-| GET | `/api/me/cards` | 我的任务，`?q=` 按标题过滤，上限 200 |
-| GET | `/api/users/lookup` | 按邮箱查用户（找不到返回 404） |
-| GET | `/api/health` | 探活，执行一次 `SELECT 1` |
+| GET | `/api/me/cards` | 我的任务；`?q=` 按标题过滤，上限 200 |
+| GET | `/api/users/lookup` | 按邮箱查用户，不存在返回 404 |
+| GET | `/api/health` | 探活，执行数据库 `SELECT 1` |
 
-## 权限模型
+</details>
 
-`ROLE_RANK` 为 `viewer 1 < member 2 < admin 3 < owner 4`，`app/services/base.py` 里统一由三个入口校验：
+### 权限实现
 
-- `require_access`：绝大多数操作的入口。非成员一律 404（不泄露项目是否存在），角色不足 403，归档项目拒绝写（409）。
-- `begin_write`：在项目行上加 `SELECT ... FOR UPDATE`，串行化同一项目的并发写。
-- `_require_card`：由卡片反查项目后复用上面两条。
+`ROLE_RANK` 为 `viewer 1 < member 2 < admin 3 < owner 4`。`app/services/base.py` 提供统一校验入口：
 
-这三个入口在每个写操作开头调用，没有旁路。角色与能力的对应关系见上文「按角色能做什么」。
-
-## 限额
-
-| 项 | 上限 | 位置 |
-| --- | --- | --- |
-| 每日新建项目 | `DAILY_PROJECT_LIMIT`（默认 30） | `constants` / `config` |
-| 每项目列表数 | 40 | `MAX_COLUMNS` |
-| 每项目卡片数 | 4000 | `MAX_CARDS` |
-| 每项目标签数 | 30 | `MAX_LABELS` |
-| 每卡片清单数 | 20 | `MAX_CHECKLISTS` |
-| 每清单条目数 | 100 | `MAX_CHECKLIST_ITEMS` |
-| 每卡片评论数 | 1000 | `MAX_COMMENTS` |
-| 单个附件 | 8 MB | `MAX_UPLOAD_BYTES` |
-
-附件类型白名单见 `constants.ALLOWED_EXTENSIONS`。文件名只用于展示，落盘名是随机 hex + 原扩展名，存 `uploads/`；删除时由 `defer_unlink` 在事务提交成功后才删磁盘文件，回滚不会留下悬空引用。
-
-接口级限流在进程内存中按来源 IP 计数（`limit.py`）：注册 10 次/小时、登录 20 次/10 分钟、邮箱查询 30 次/分钟、验证码 8 次/小时。同一邮箱 60 秒内不能重复获取验证码；验证码 10 分钟内有效，连续错 5 次作废。多实例部署时这些计数不共享，需要换成 Redis 之类的共享存储。
-
-## 前端
-
-单页应用，`#/` 路由解析到 `projects`、`board/{id}`、`tasks`、`notifications`、`settings`、`account` 六个视图，`hashchange` 驱动重绘。通知页点一条未读即调用 `POST /api/notifications/{id}/read`，只清这一条并减少角标；「全部已读」仍一次清掉剩余未读。看板拖拽基于 Pointer Events：鼠标按住即拖，触屏长按 280ms 进入拖拽；筛选开启时禁用拖拽，避免按可见子集算出的落点错位。卡片详情在右侧抽屉里即时保存，标题、描述、截止日期失焦即保存，主负责人在下拉变更时保存。`Esc` 依次关闭弹层、抽屉、侧边栏。
-
-侧栏「我的任务」和移动端底部「任务」共用 `static/js/icons.js` 中的任务清单 SVG 图标。
-
-## 测试
-
-```bash
-docker compose up -d          # 测试库由容器首次初始化时创建
-.venv/Scripts/python -m pytest
-```
-
-测试库是 `kanban_test`，由 `deploy/initdb/01-test-db.sql` 建库并给 `kanban` 用户授权；`tests/conftest.py` 覆盖 `DATABASE_URL` 后每个用例前 `truncate_all()` 重建表并清空限流计数。测试用 `TestClient` 且带 `X-Kanban: 1`。
-
-覆盖：健康检查、注册登录登出与请求头校验、注册验证码、项目与看板初始化（默认三列四标签）、邀请需批准、只读成员不能写、每日建项目上限、附件与截止日期。测试通过 `MAIL_CAPTURE=1` 截获验证码，不连真实 SMTP；生产环境不要设置这个变量。
-
-`truncate_all()` 会 DROP 该库所有表，**不要**把 `DATABASE_URL` 指到生产库跑测试。
-
-前端回归测试：
-
-```bash
-node --test tests/api.test.mjs tests/startup.test.mjs
-```
-
-浏览器回归为独立脚本，不由 pytest 自动收集。需要额外安装 Playwright，并通过 `CHROMIUM_PATH` 指定 Chromium 可执行文件，再运行 `python tests/startup_browser.py`。脚本只使用本地静态服务器和模拟 API，不访问数据库。
-
-## 生产注意
-
-- 必须换掉 `SECRET_KEY`、MariaDB 的 root 与 `kanban` 密码；`docker-compose.yml` 里是明文开发口令。
-- HTTPS 下设置 `APP_SECURE_COOKIE=1`。
-- 必须配置 `SMTP_HOST` 等发信变量，否则无法注册。
-- 进程内限流和单 worker 假设不适配多副本；多副本时换共享存储。
-- 附件写在本地磁盘，多副本或容器重建需要改成共享卷或对象存储。
+- `require_access`：非成员返回 404，避免泄露项目是否存在；角色不足返回 403；归档项目拒绝写入，返回 409。
+- `begin_write`：在项目行上执行 `SELECT ... FOR UPDATE`，串行化同一项目的并发写入。
+- `_require_card`：由卡片反查项目，复用访问校验与写锁。
 
 ## 许可证
 
-MIT，见 [LICENSE](LICENSE)。
+[MIT](LICENSE) © 2026 Pink。
