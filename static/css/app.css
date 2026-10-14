@@ -444,6 +444,7 @@ button.pill.is-on { opacity: 1; box-shadow: inset 0 0 0 1px color-mix(in srgb, v
 .faces .avatar { width: 26px; height: 26px; margin-left: -7px; border: 2px solid #10141c; box-shadow: none; }
 .faces .avatar:first-child { margin-left: 0; }
 .card-foot .avatar { width: 20px; height: 20px; font-size: 10px; border: 1px solid rgba(8, 11, 18, .8); }
+.card-foot .avatar.is-lead { border-color: var(--cyan-soft); box-shadow: 0 0 0 1px color-mix(in srgb, var(--cyan-soft) 55%, transparent); }
 .composer { display: flex; gap: 6px; align-items: center; }
 .composer > button { flex: none; white-space: nowrap; }
 .add-card, .add-column {
@@ -576,6 +577,15 @@ button.pill.is-on { opacity: 1; box-shadow: inset 0 0 0 1px color-mix(in srgb, v
 }
 .assignee.is-on { background: rgba(139, 114, 255, .12); border-color: rgba(126, 233, 255, .28); color: var(--text-primary); }
 .assignee .avatar { width: 22px; height: 22px; font-size: 10px; }
+.responsible { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.responsible .avatar { width: 22px; height: 22px; font-size: 10px; }
+.drawer-panel select.responsible-select {
+  width: auto; flex: 1; min-width: 0; height: 32px; min-height: 32px; padding: 0 8px; font-size: 13px;
+  border-radius: 10px; background: transparent; border-color: transparent; box-shadow: none;
+}
+.drawer-panel select.responsible-select:focus {
+  background: rgba(255,255,255,.03); border-color: var(--cyan-soft); box-shadow: 0 0 0 3px rgba(85, 140, 255, .16);
+}
 .more-actions {
   margin-top: 28px; padding-top: 14px; border-top: 1px solid var(--border-subtle);
   display: flex; flex-wrap: wrap; gap: 8px;
@@ -654,7 +664,8 @@ button.pill.is-on { opacity: 1; box-shadow: inset 0 0 0 1px color-mix(in srgb, v
 .task .due, .task .muted.due-slot { font-size: 12px; white-space: nowrap; }
 .note-list { display: flex; flex-direction: column; }
 .note { display: grid; grid-template-columns: 8px minmax(0, 1fr); gap: 8px; padding: 12px 6px; margin: 0; border-bottom: 1px solid var(--border-subtle); }
-.note.is-unread { background: linear-gradient(90deg, rgba(139, 114, 255, .08), rgba(52, 217, 255, .03) 62%, transparent); border-radius: 10px; }
+.note.is-unread { cursor: pointer; background: linear-gradient(90deg, rgba(139, 114, 255, .08), rgba(52, 217, 255, .03) 62%, transparent); border-radius: 10px; }
+.note.is-unread:hover { background: linear-gradient(90deg, rgba(139, 114, 255, .14), rgba(52, 217, 255, .06) 62%, transparent); }
 .note-dot { width: 6px; height: 6px; margin-top: 8px; border-radius: 50%; background: transparent; }
 .note.is-unread .note-dot { background: var(--cyan-soft); box-shadow: 0 0 8px rgba(126, 233, 255, .55); }
 .note-main { min-width: 0; }

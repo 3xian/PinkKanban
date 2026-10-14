@@ -105,6 +105,7 @@ class Card(Base):
     archived: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     position: Mapped[int] = mapped_column("sort_order", Integer, default=0)
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    responsible_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", name="fk_cards_responsible_user"), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 

@@ -270,6 +270,7 @@ class CardPatch(BaseModel):
     due_on: date | None = None
     cover_color: str | None = None
     done: bool | None = None
+    responsible_user_id: int | None = None
 
     @field_validator("title")
     @classmethod

@@ -30,6 +30,7 @@ export const ACTIONS = {
   "card.deleted": "删除了卡片",
   "card.duplicated": "复制了卡片",
   "card.assigned": "调整了指派",
+  "card.responsible": "调整了主负责人",
   "comment.added": "发表了评论",
 };
 
@@ -66,6 +67,51 @@ export function avatar(person, extra = "") {
   return node;
 }
 
+export function cardFaces(card, members, limit = 3) {
+  const people = members || [];
+  const assigned = new Set(card?.assignee_ids || []);
+  const leadId = card?.responsible_user_id ?? null;
+  const assignedPeople = people.filter((person) => assigned.has(person.id));
+  if (leadId == null) return assignedPeople.slice(0, limit).map((person) => ({ person, lead: false }));
+  const lead = people.find((person) => person.id === leadId) || null;
+  const faces = [];
+  if (lead) faces.push({ person: lead, lead: true });
+  for (const person of assignedPeople.filter((item) => item.id !== leadId).slice(0, limit)) faces.push({ person, lead: false });
+  return faces;
+}
+
+export function faceNode(face) {
+  const node = avatar(face.person, face.lead ? "is-lead" : "");
+  if (face.lead) node.title = `主负责人 ${face.person.display_name || ""}`.trim();
+  return node;
+}
+
+export function participantMembers(card, members) {
+  const people = members || [];
+  const leadId = card?.responsible_user_id ?? null;
+  if (leadId == null) return people.slice();
+  return people.filter((person) => person.id !== leadId);
+}
+
+export function responsibleField(card, members, edit) {
+  const people = members || [];
+  const current = people.find((person) => person.id === card?.responsible_user_id) || null;
+  const select = el("select", {
+    class: "responsible-select",
+    "data-act": "responsible",
+    "aria-label": "主负责人",
+    disabled: !edit,
+  },
+    el("option", { value: "", text: "未指定", selected: !current }),
+    ...people.map((person) => el("option", {
+      value: String(person.id),
+      text: person.display_name,
+      selected: current?.id === person.id,
+    })),
+  );
+  return el("div", { class: "responsible" }, current ? avatar(current) : null, select);
+}
+
 export function dueInfo(value) {
   if (!value) return null;
   const today = new Date();
@@ -78,16 +124,28 @@ export function dueInfo(value) {
   return { text: `${due.getMonth() + 1}月${due.getDate()}日` };
 }
 
+const TWELVE_HOURS = 12 * 3600;
+
+function pad(value) {
+  return String(value).padStart(2, "0");
+}
+
+function absolute(then) {
+  const clock = `${pad(then.getHours())}:${pad(then.getMinutes())}`;
+  const date = `${then.getMonth() + 1}月${then.getDate()}日`;
+  if (then.getFullYear() === new Date().getFullYear()) return `${date} ${clock}`;
+  return `${then.getFullYear()}年${date} ${clock}`;
+}
+
 export function relative(iso) {
   if (!iso) return "";
   const then = new Date(iso.endsWith("Z") ? iso : `${iso}Z`);
   const diff = (Date.now() - then.getTime()) / 1000;
   if (Number.isNaN(diff)) return "";
+  if (diff >= TWELVE_HOURS) return absolute(then);
   if (diff < 60) return "刚刚";
   if (diff < 3600) return `${Math.floor(diff / 60)} 分钟前`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)} 小时前`;
-  if (diff < 172800) return "昨天";
-  return `${then.getMonth() + 1}月${then.getDate()}日`;
+  return `${Math.floor(diff / 3600)} 小时前`;
 }
 
 export function fileSize(bytes) {

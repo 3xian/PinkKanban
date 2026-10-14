@@ -4,6 +4,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -88,7 +89,70 @@ def init_db() -> None:
     from app.models import Base
 
     ensure_database()
-    Base.metadata.create_all(get_engine())
+    engine = get_engine()
+    Base.metadata.create_all(engine)
+    upgrade_schema(engine)
+
+
+def upgrade_schema(engine=None) -> None:
+    engine = engine or get_engine()
+    if engine.dialect.name != "mysql":
+        return
+    _ensure_card_responsible(engine)
+
+
+def _schema_has(engine, sql: str, params: dict) -> bool:
+    with engine.connect() as conn:
+        return bool(conn.execute(text(sql), params).scalar())
+
+
+def _duplicate_schema(exc: Exception) -> bool:
+    orig = getattr(exc, "orig", None)
+    args = getattr(orig, "args", ())
+    if args and args[0] in {1022, 1060, 1061, 1826}:
+        return True
+    message = str(orig or exc).lower()
+    return "duplicate" in message
+
+
+def _alter(engine, sql: str) -> None:
+    try:
+        with engine.begin() as conn:
+            conn.execute(text(sql))
+    except (OperationalError, ProgrammingError) as exc:
+        if _duplicate_schema(exc):
+            return
+        raise
+
+
+def _ensure_card_responsible(engine) -> None:
+    params = {"table": "cards", "column": "responsible_user_id"}
+    if not _schema_has(
+        engine,
+        "SELECT 1 FROM information_schema.COLUMNS "
+        "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table AND COLUMN_NAME = :column",
+        params,
+    ):
+        _alter(engine, "ALTER TABLE `cards` ADD COLUMN `responsible_user_id` INT NULL")
+    if not _schema_has(
+        engine,
+        "SELECT 1 FROM information_schema.STATISTICS "
+        "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table AND COLUMN_NAME = :column",
+        params,
+    ):
+        _alter(engine, "ALTER TABLE `cards` ADD INDEX `ix_cards_responsible_user_id` (`responsible_user_id`)")
+    if not _schema_has(
+        engine,
+        "SELECT 1 FROM information_schema.KEY_COLUMN_USAGE "
+        "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table "
+        "AND COLUMN_NAME = :column AND REFERENCED_TABLE_NAME IS NOT NULL",
+        params,
+    ):
+        _alter(
+            engine,
+            "ALTER TABLE `cards` ADD CONSTRAINT `fk_cards_responsible_user` "
+            "FOREIGN KEY (`responsible_user_id`) REFERENCES `users` (`id`)",
+        )
 
 
 def truncate_all() -> None:

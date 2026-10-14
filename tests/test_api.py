@@ -107,6 +107,26 @@ def test_project_board_and_quota(client):
     assert comment.json()["comments"][0]["body"] == "记得看移动端"
 
 
+def test_mark_one_notification_read(client):
+    register(client, "notes@example.com", "读者")
+    assert client.post("/api/projects", json={"name": "甲", "description": "", "color": "#D63A56"}).status_code == 200
+    assert client.post("/api/projects", json={"name": "乙", "description": "", "color": "#3D6B8A"}).status_code == 200
+    notes = client.get("/api/notifications").json()
+    assert notes["unread"] == 2
+    target = notes["items"][0]
+    other = notes["items"][1]
+    marked = client.post(f"/api/notifications/{target['id']}/read")
+    assert marked.status_code == 200, marked.text
+    again = client.get("/api/notifications").json()
+    assert again["unread"] == 1
+    by_id = {item["id"]: item for item in again["items"]}
+    assert by_id[target["id"]]["read"] is True
+    assert by_id[other["id"]]["read"] is False
+    assert client.post(f"/api/notifications/{target['id']}/read").status_code == 200
+    assert client.get("/api/notifications").json()["unread"] == 1
+    assert client.post("/api/notifications/999999/read").status_code == 404
+
+
 def test_invite_requires_approval(client):
     register(client, "owner@example.com", "拥有者")
     project_id = client.post("/api/projects", json={"name": "协作", "description": "", "color": "#3D6B8A"}).json()["project"]["id"]

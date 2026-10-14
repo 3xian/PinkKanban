@@ -195,6 +195,8 @@ def _clear_assignee(db: Session, project_id: int, user_id: int) -> None:
     ).all()
     for row in rows:
         db.delete(row)
+    for card in db.scalars(select(Card).where(Card.project_id == project_id, Card.responsible_user_id == user_id)):
+        card.responsible_user_id = None
 
 def _member_rows(db: Session, project_id: int) -> list[dict]:
     rows = db.execute(

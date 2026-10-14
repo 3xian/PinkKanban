@@ -37,11 +37,11 @@ flowchart LR
 ### 看板与卡片
 
 - **列表**：增删改名、改在制品上限（WIP）、拖拽排序；至少保留一个列表，删除列表时卡片会并入相邻列表。WIP 超出时只把列表计数标成强调色，服务端不阻止移动。
-- **卡片**：标题、描述（Markdown）、优先级（无/低/中/高/紧急）、截止日期、封面色、完成标记、归档、复制；支持跨列与同列拖拽排序。
-- **卡片详情**：右侧抽屉分两列。左列是描述；右列是优先级、截止日期、指派、封面、标签、清单（含勾选进度）、评论、附件和该卡片最近 30 条活动。窄屏收成单列。
-- **筛选**：关键词、我的、延期、标签、优先级、隐藏完成、已归档。筛选开启时禁用拖拽，避免按可见子集算出的落点错位。
-- **我的任务**：跨项目汇总指派给你的卡片，`?q=` 按标题过滤。
-- **活动流**：记录创建、移动、指派、评论、成员变动等 21 类动作。
+- **卡片**：标题、描述（Markdown）、优先级（无/低/中/高/紧急）、截止日期、可选主负责人、封面色、完成标记、归档、复制；支持跨列与同列拖拽排序。主负责人最多一人，只能从当前项目成员里选，不改变 owner/admin/member/viewer 权限。指定后自动加入参与人；换人后原负责人仍是参与人；清空主负责人不会取消参与。
+- **卡片详情**：右侧抽屉分两列。左列是描述；右列是优先级、截止日期、主负责人、参与人、封面、标签、清单（含勾选进度）、评论、附件和该卡片最近 30 条活动。窄屏收成单列。主负责人用下拉选择，变更立即保存；参与人区域不重复展示主负责人。看板上有主负责人时，卡片底部用头像描边标出，不另起文字行。
+- **筛选**：关键词、我的、延期、标签、优先级、隐藏完成、已归档。筛选开启时禁用拖拽，避免按可见子集算出的落点错位。「我的」仍按参与人过滤；主负责人已在参与人中。
+- **我的任务**：跨项目汇总指派给你的卡片，`?q=` 按标题过滤。主负责人同时是参与人，因此仍会出现在这里。
+- **活动流**：记录创建、移动、指派、主负责人、评论、成员变动等动作。
 
 ### 项目与配额
 
@@ -80,7 +80,7 @@ run.bat
 .venv/Scripts/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-打开 <http://127.0.0.1:8000>。启动时 `lifespan` 会建库（`DATABASE_URL` 里的库不存在则自动 `CREATE DATABASE`）并 `create_all` 建表，无需迁移脚本。
+打开 <http://127.0.0.1:8000>。启动时 `lifespan` 会建库（`DATABASE_URL` 里的库不存在则自动 `CREATE DATABASE`）并 `create_all` 建表。已有库不会被 `create_all` 改表，启动时再执行可重复的结构升级：目前只给 `cards` 补可空列 `responsible_user_id`、索引和外键，不改已有行。升级在服务启动时完成，改完后端需要重启 `pinkkanban.service`。
 
 首次运行前复制 `.env.example` 为 `.env`；`app/config.py` 会读取 `.env`，但**不会覆盖**已存在的环境变量。
 
@@ -125,9 +125,9 @@ run.bat
 | POST | `/api/projects/{id}/columns` `cards` `labels` | 新建列表 / 卡片 / 标签 |
 | POST | `/api/projects/{id}/columns/reorder` | 列表排序 |
 | PATCH DELETE | `/api/columns/{id}` `/api/labels/{id}` | 改 / 删列表与标签 |
-| GET PATCH DELETE | `/api/cards/{id}` | 卡片详情 / 修改 / 删除 |
-| POST | `/api/cards/{id}/move` `archive` `restore` `duplicate` | 移动、归档、恢复、复制 |
-| PUT | `/api/cards/{id}/labels` `assignees` | 全量替换标签 / 指派 |
+| GET PATCH DELETE | `/api/cards/{id}` | 卡片详情 / 修改 / 删除。详情和看板卡片含 `responsible_user_id`。PATCH 传项目成员 id 设置主负责人，传 `null` 清空；不传则不动 |
+| POST | `/api/cards/{id}/move` `archive` `restore` `duplicate` | 移动、归档、恢复、复制。复制保留仍在项目中的主负责人和参与人 |
+| PUT | `/api/cards/{id}/labels` `assignees` | 全量替换标签 / 参与人。移除当前主负责人时同步清空该字段 |
 | POST | `/api/cards/{id}/checklists` `comments` `attachments` | 加清单 / 评论 / 附件 |
 | PATCH DELETE | `/api/checklists/{id}` `/api/checklist-items/{id}` `/api/comments/{id}` | 改删子资源 |
 | GET | `/api/attachments/{id}/file` | 下载；图片扩展名自动以 inline 方式返回，其余走 attachment |
@@ -167,7 +167,7 @@ run.bat
 
 ## 前端
 
-单页应用，`#/` 路由解析到 `projects`、`board/{id}`、`tasks`、`notifications`、`settings`、`account` 六个视图，`hashchange` 驱动重绘。看板拖拽基于 Pointer Events：鼠标按住即拖，触屏长按 280ms 进入拖拽；筛选开启时禁用拖拽，避免按可见子集算出的落点错位。卡片详情在右侧抽屉里做乐观更新，标题、描述、截止日期失焦即保存。`Esc` 依次关闭弹层、抽屉、侧边栏。
+单页应用，`#/` 路由解析到 `projects`、`board/{id}`、`tasks`、`notifications`、`settings`、`account` 六个视图，`hashchange` 驱动重绘。通知页点一条未读即调用 `POST /api/notifications/{id}/read`，只清这一条并减少角标；「全部已读」仍一次清掉剩余未读。看板拖拽基于 Pointer Events：鼠标按住即拖，触屏长按 280ms 进入拖拽；筛选开启时禁用拖拽，避免按可见子集算出的落点错位。卡片详情在右侧抽屉里即时保存，标题、描述、截止日期失焦即保存，主负责人在下拉变更时保存。`Esc` 依次关闭弹层、抽屉、侧边栏。
 
 侧栏「我的任务」和移动端底部「任务」共用 `static/js/icons.js` 中的任务清单 SVG 图标。
 

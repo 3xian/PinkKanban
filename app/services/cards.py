@@ -88,18 +88,60 @@ def create_card(db: Session, project_id: int, user: User, column_id: int, title:
     return card
 
 
+def _assignee_ids(db: Session, card_id: int) -> set[int]:
+    return set(db.scalars(select(CardAssignee.user_id).where(CardAssignee.card_id == card_id)))
+
+
+def _add_assignee(db: Session, card: Card, user_id: int) -> bool:
+    if user_id in _assignee_ids(db, card.id):
+        return False
+    db.add(CardAssignee(card_id=card.id, user_id=user_id))
+    return True
+
+
+def _notify_responsible(db: Session, card: Card, project_id: int, actor: User, user_id: int) -> None:
+    _notify(
+        db,
+        recipient_id=user_id,
+        actor_id=actor.id,
+        type="card_responsible",
+        title="主负责人",
+        body=f"{actor.display_name} 把你设为「{card.title}」的主负责人",
+        project_id=project_id,
+        card_id=card.id,
+    )
+
+
+def _apply_responsible(db: Session, card: Card, project_id: int, actor: User, user_id: int | None) -> bool:
+    if user_id == card.responsible_user_id:
+        return False
+    if user_id is not None:
+        if user_id not in _member_ids(db, project_id):
+            raise HTTPException(400, "只能指定项目成员")
+        if _add_assignee(db, card, user_id):
+            _activity(db, project_id=project_id, user_id=actor.id, action="card.assigned", card_id=card.id, detail={"title": card.title})
+        _notify_responsible(db, card, project_id, actor, user_id)
+    card.responsible_user_id = user_id
+    _activity(db, project_id=project_id, user_id=actor.id, action="card.responsible", card_id=card.id, detail={"title": card.title})
+    return True
+
+
 def update_card(db: Session, card_id: int, user: User, data: dict) -> Card:
     card, project, _member = _require_card(db, card_id, user, "member", write=True)
     project = _lock_project(db, project.id)
+    responsible_changed = False
+    if "responsible_user_id" in data:
+        responsible_changed = _apply_responsible(db, card, project.id, user, data["responsible_user_id"])
     changed = []
     for field, label in CARD_FIELDS:
         if field not in data or data[field] == getattr(card, field):
             continue
         setattr(card, field, data[field])
         changed.append(label)
-    if changed:
+    if changed or responsible_changed:
         card.updated_at = utcnow()
         _touch(project)
+    if changed:
         _activity(db, project_id=project.id, user_id=user.id, action="card.updated", card_id=card.id, detail={"title": card.title, "fields": changed})
     return card
 
@@ -215,6 +257,16 @@ def duplicate_card(db: Session, card_id: int, user: User) -> Card:
         )
         for item in items:
             db.add(ChecklistItem(checklist_id=copied.id, text=item.text, done=item.done, position=item.position))
+    members = _member_ids(db, project.id)
+    copied_ids: list[int] = []
+    for user_id in db.scalars(select(CardAssignee.user_id).where(CardAssignee.card_id == card.id)):
+        if user_id in members and user_id not in copied_ids:
+            copied_ids.append(user_id)
+            db.add(CardAssignee(card_id=copy.id, user_id=user_id))
+    if card.responsible_user_id in members:
+        copy.responsible_user_id = card.responsible_user_id
+        if card.responsible_user_id not in copied_ids:
+            db.add(CardAssignee(card_id=copy.id, user_id=card.responsible_user_id))
     live = _live_cards(db, card.column_id)
     live.insert(next(i for i, item in enumerate(live) if item.id == card.id) + 1, copy)
     _reindex(live)
@@ -253,8 +305,9 @@ def replace_assignees(db: Session, card_id: int, user: User, ids: list[int]) -> 
         raise HTTPException(400, "只能指派项目成员")
     current = list(db.scalars(select(CardAssignee).where(CardAssignee.card_id == card.id)))
     current_ids = {row.user_id for row in current}
+    wanted_ids = set(wanted)
     for row in current:
-        if row.user_id not in wanted:
+        if row.user_id not in wanted_ids:
             db.delete(row)
     added = [item for item in wanted if item not in current_ids]
     for user_id in added:
@@ -269,10 +322,15 @@ def replace_assignees(db: Session, card_id: int, user: User, ids: list[int]) -> 
             project_id=project.id,
             card_id=card.id,
         )
+    cleared_responsible = card.responsible_user_id is not None and card.responsible_user_id not in wanted_ids
+    if cleared_responsible:
+        card.responsible_user_id = None
     card.updated_at = utcnow()
     _touch(project)
-    if added or set(current_ids) - set(wanted):
+    if added or current_ids - wanted_ids:
         _activity(db, project_id=project.id, user_id=user.id, action="card.assigned", card_id=card.id, detail={"title": card.title})
+    if cleared_responsible:
+        _activity(db, project_id=project.id, user_id=user.id, action="card.responsible", card_id=card.id, detail={"title": card.title})
     return card
 
 
@@ -292,6 +350,7 @@ def _card_brief(card: Card, label_ids: list[int], assignee_ids: list[int], done:
         "updated_at": iso(card.updated_at),
         "label_ids": label_ids,
         "assignee_ids": assignee_ids,
+        "responsible_user_id": card.responsible_user_id,
         "checklist": {"done": done, "total": total},
         "comment_count": comment_count,
         "attachment_count": attachment_count,

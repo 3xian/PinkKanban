@@ -19,7 +19,7 @@ PROJECT = {"id": 1, "name": "Android 客户端验收", "description": "仅存在
 CARD = {"id": 1, "project_id": 1, "column_id": 1, "title": "验证 Android 附件和返回导航", "description": "本地模拟卡片",
         "excerpt": "本地模拟卡片", "priority": "high", "due_on": None, "cover_color": None, "done": False,
         "archived": False, "position": 0, "created_by": 1, "updated_at": "2026-10-02T00:00:00Z",
-        "label_ids": [], "assignee_ids": [1], "checklist": {"done": 0, "total": 0}, "comment_count": 0,
+        "label_ids": [], "assignee_ids": [1], "responsible_user_id": None, "checklist": {"done": 0, "total": 0}, "comment_count": 0,
         "attachment_count": 1, "can_edit": True}
 FILES = [{"id": 1, "filename": "android-qa.txt", "size": 18, "image": False, "mine": True}]
 

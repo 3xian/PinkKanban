@@ -1,7 +1,7 @@
 import { api } from "./api.js";
 import { installDrag } from "./dnd.js";
 import { canPullRefreshAt } from "./refresh.js";
-import { ACTIONS, COLORS, PRIORITIES, ROLES, avatar, canAdmin, canEdit, dueInfo, el, fileSize, markdown, relative, safeColor } from "./format.js";
+import { ACTIONS, COLORS, PRIORITIES, ROLES, avatar, canAdmin, canEdit, cardFaces, dueInfo, el, faceNode, fileSize, markdown, participantMembers, relative, responsibleField, safeColor } from "./format.js";
 import { icon as glyph } from "./icons.js";
 
 window.kanbanGestures = Object.freeze({ canPullRefreshAt });
@@ -667,8 +667,8 @@ function cardNode(card, column) {
   if (due) bits.push(metaBit("calendar", due.text, due.over ? "due is-over" : due.today ? "due is-today" : "due"));
   if (card.checklist.total) bits.push(metaBit("check", `${card.checklist.done}/${card.checklist.total}`));
   if (card.comment_count) bits.push(metaBit("comment", String(card.comment_count)));
-  const people = state.board.members.filter((person) => card.assignee_ids.includes(person.id)).slice(0, 3);
-  if (bits.length || people.length) node.append(el("div", { class: "card-foot" }, ...bits, el("span", { class: "spacer" }), ...people.map((person) => avatar(person))));
+  const faces = cardFaces(card, state.board.members);
+  if (bits.length || faces.length) node.append(el("div", { class: "card-foot" }, ...bits, el("span", { class: "spacer" }), ...faces.map(faceNode)));
   return node;
 }
 
@@ -707,7 +707,7 @@ function notesView() {
 
 function noteRow(note) {
   const pending = note.type === "project_invite" && note.status === "pending";
-  return el("article", { class: note.read ? "note" : "note is-unread" },
+  return el("article", { class: note.read ? "note" : "note is-unread", "data-act": note.read ? null : "read-note", "data-id": note.id },
     el("i", { class: "note-dot" }),
     el("div", { class: "note-main" },
       el("header", {}, note.actor ? avatar(note.actor) : glyph("bell"), el("strong", { text: note.title }), el("span", { class: "muted", text: relative(note.created_at) })),
@@ -858,13 +858,17 @@ function paintDrawer() {
               el("label", { class: "field" }, el("input", { type: "date", "data-save": "due", value: card.due_on || "", disabled: !edit, "aria-label": "截止日期" })),
             ),
             el("div", { class: "prop" },
+              el("span", { class: "prop-k", text: "主负责人" }),
+              responsibleField(card, members, edit),
+            ),
+            el("div", { class: "prop" },
               el("span", { class: "prop-k", text: "状态" }),
               el("label", { class: "check" }, el("input", { type: "checkbox", "data-act": "done", checked: card.done, disabled: !edit }), "完成"),
             ),
             el("div", { class: "prop prop-top" },
-              el("span", { class: "prop-k", text: "指派" }),
-              el("div", { class: "assignees" }, ...members.map((person) => {
-                const on = card.assignee_ids.includes(person.id);
+              el("span", { class: "prop-k", text: "参与人" }),
+              el("div", { class: "assignees" }, ...participantMembers(card, members).map((person) => {
+                const on = (card.assignee_ids || []).includes(person.id);
                 return el("button", { type: "button", class: on ? "assignee is-on" : "assignee", "data-act": "toggle-assignee", "data-id": person.id, disabled: !edit }, avatar(person), person.display_name);
               })),
             ),
@@ -1113,6 +1117,24 @@ const clicks = {
   reject(node) {
     run(node, async () => { await api(`/api/notifications/${idOf(node)}/reject`, { method: "POST" }); await openNotes(); });
   },
+  "read-note"(node) {
+    const id = idOf(node);
+    const note = state.notes.find((item) => item.id === id);
+    if (!note || note.read || node.dataset.reading === "1") return;
+    node.dataset.reading = "1";
+    run(node, async () => {
+      try {
+        await api(`/api/notifications/${id}/read`, { method: "POST" });
+        note.read = true;
+        state.unread = Math.max(0, state.unread - 1);
+        node.classList.remove("is-unread");
+        delete node.dataset.act;
+        paintBadges();
+      } finally {
+        delete node.dataset.reading;
+      }
+    });
+  },
   "read-all"(node) {
     run(node, async () => { await api("/api/notifications/read-all", { method: "POST" }); await openNotes(); });
   },
@@ -1285,6 +1307,10 @@ document.addEventListener("change", (event) => {
       state.settings = await api(`/api/projects/${state.projectId}/members/${node.dataset.id}`, { method: "PATCH", body: { role: node.value } });
       render();
     });
+  } else if (node.dataset.act === "responsible") {
+    const value = node.value ? Number(node.value) : null;
+    if ((state.detail?.card.responsible_user_id ?? null) === value) return;
+    run(node, () => saveCard({ responsible_user_id: value }));
   } else if (node.dataset.act === "upload" && node.files?.[0]) {
     const body = new FormData();
     body.append("file", node.files[0]);
