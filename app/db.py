@@ -99,6 +99,14 @@ def upgrade_schema(engine=None) -> None:
     if engine.dialect.name != "mysql":
         return
     _ensure_card_responsible(engine)
+    if _schema_has(
+        engine,
+        "SELECT 1 FROM information_schema.COLUMNS "
+        "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table "
+        "AND COLUMN_NAME = :column AND IS_NULLABLE = 'NO'",
+        {"table": "access_tokens", "column": "expires_at"},
+    ):
+        _alter(engine, "ALTER TABLE access_tokens MODIFY COLUMN expires_at DATETIME NULL")
 
 
 def _schema_has(engine, sql: str, params: dict) -> bool:

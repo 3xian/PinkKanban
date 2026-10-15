@@ -100,6 +100,16 @@ class PasswordIn(BaseModel):
     new_password: str = Field(min_length=8, max_length=128)
 
 
+class AccessTokenIn(BaseModel):
+    name: str
+    expires_in_days: int | None = Field(default=30, ge=1, le=365, strict=True)
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, value: str) -> str:
+        return clean_name(value, limit=60, empty="请填写凭证名称")
+
+
 class ProjectIn(BaseModel):
     name: str
     description: str = ""

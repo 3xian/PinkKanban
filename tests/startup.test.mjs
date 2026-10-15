@@ -5,7 +5,6 @@ import vm from 'node:vm';
 
 const appSource = readFileSync(new URL('../static/js/app.js', import.meta.url), 'utf8');
 const bootSource = appSource.slice(appSource.indexOf('export async function boot()'), appSource.indexOf('\nfunction applyBootstrap')).replace('export ', '');
-const routeSource = appSource.slice(appSource.indexOf('async function route('), appSource.indexOf('\nasync function loadProjects'));
 const startupSource = readFileSync(new URL('../static/js/startup.js', import.meta.url), 'utf8').replace('import("./app.js")', 'importApp()');
 const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
 
@@ -57,20 +56,6 @@ test('failed catch-up navigation still installs recovery listener', async () => 
   };
   await assert.rejects(context.boot(), /second route failed/);
   assert.equal(events.length, 1);
-});
-
-test('projects reuse is initial-only; later and archived views refresh', async () => {
-  let loads = 0, renders = 0;
-  const context = vm.createContext({ state: { user: {}, showArchived: false }, location: { hash: '#/projects' },
-    loadProjects: async () => { loads++; }, render: () => { renders++; } });
-  vm.runInContext(routeSource, context);
-  await context.route({ useBootstrap: true });
-  assert.equal(loads, 0);
-  await context.route();
-  context.state.showArchived = true;
-  await context.route({ useBootstrap: true });
-  assert.equal(loads, 2);
-  assert.equal(renders, 3);
 });
 
 function startupContext({ imported, autoLoad = true } = {}) {

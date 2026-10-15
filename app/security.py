@@ -53,3 +53,7 @@ def read_session(token: str | None) -> int | None:
         return None
     uid = payload.get("uid")
     return int(uid) if isinstance(uid, int) else None
+
+
+def hash_access_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()

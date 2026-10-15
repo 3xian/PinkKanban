@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import secrets
+from datetime import timedelta
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -7,12 +10,12 @@ from sqlalchemy.orm import Session
 from app.config import secure_cookie
 from app.constants import SESSION_COOKIE, SESSION_DAYS
 from app.db import get_db
-from app.deps import current_user
+from app.deps import current_user, session_user
 from app.limit import limit
 from app.mail import send_register_code
-from app.models import User
-from app.schemas import EmailIn, LoginIn, PasswordIn, ProfileIn, RegisterIn
-from app.security import hash_password, sign_session, verify_password
+from app.models import AccessToken, User, utcnow
+from app.schemas import AccessTokenIn, EmailIn, LoginIn, PasswordIn, ProfileIn, RegisterIn
+from app.security import hash_access_token, hash_password, sign_session, verify_password
 from app.serialize import iso, user_brief
 from app.services import create_user
 from app.verify import CODE_TTL, RESEND_WAIT, consume_code, issue_code
@@ -104,4 +107,44 @@ def change_password(body: PasswordIn, user: User = Depends(current_user)):
     if not verify_password(body.current_password, user.password_hash):
         raise HTTPException(400, "当前密码不正确")
     user.password_hash = hash_password(body.new_password)
+    return {"ok": True}
+
+
+def token_info(token: AccessToken) -> dict:
+    return {
+        "id": token.id,
+        "name": token.name,
+        "created_at": iso(token.created_at),
+        "expires_at": iso(token.expires_at),
+    }
+
+
+@router.get("/tokens")
+def list_tokens(response: Response, user: User = Depends(session_user), db: Session = Depends(get_db)):
+    response.headers["Cache-Control"] = "no-store"
+    tokens = db.scalars(select(AccessToken).where(AccessToken.user_id == user.id).order_by(AccessToken.id.desc()))
+    return {"items": [token_info(token) for token in tokens]}
+
+
+@router.post("/tokens")
+def create_token(body: AccessTokenIn, response: Response, user: User = Depends(session_user), db: Session = Depends(get_db)):
+    secret = "pk_" + secrets.token_urlsafe(32)
+    token = AccessToken(
+        user_id=user.id,
+        name=body.name,
+        token_hash=hash_access_token(secret),
+        expires_at=utcnow() + timedelta(days=body.expires_in_days) if body.expires_in_days is not None else None,
+    )
+    db.add(token)
+    db.flush()
+    response.headers["Cache-Control"] = "no-store"
+    return {**token_info(token), "token": secret}
+
+
+@router.delete("/tokens/{token_id}")
+def revoke_token(token_id: int, user: User = Depends(session_user), db: Session = Depends(get_db)):
+    token = db.scalar(select(AccessToken).where(AccessToken.id == token_id, AccessToken.user_id == user.id))
+    if token is None:
+        raise HTTPException(404, "凭证不存在")
+    db.delete(token)
     return {"ok": True}

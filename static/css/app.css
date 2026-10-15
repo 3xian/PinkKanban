@@ -627,6 +627,9 @@ button.pill.is-on { opacity: 1; box-shadow: inset 0 0 0 1px color-mix(in srgb, v
 .account-id { display: flex; align-items: center; gap: 12px; margin: 4px 0 8px; }
 .account-id strong { display: block; font-size: 16px; }
 .readonly { font-size: 13px; color: var(--text-secondary); }
+.token-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border-subtle); }
+.token-meta { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.token-meta .muted { font-size: 12px; }
 .member-list, .invite-list { display: flex; flex-direction: column; }
 .member-row {
   display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center;

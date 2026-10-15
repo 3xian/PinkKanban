@@ -166,6 +166,8 @@ curl http://127.0.0.1:8000/api/health
 
 前端为 hash 路由单页应用：项目、看板、我的任务、通知、设置、账号六个视图。通知单条已读只减少该条未读计数，「全部已读」清除剩余未读；`Esc` 依次关闭弹层、抽屉、侧边栏。任务入口共用 `static/js/icons.js` 的任务清单 SVG 图标。
 
+账户页的 Agent 凭证区域由 `static/js/tokens.js` 独立管理 DOM 和请求生命周期，刷新列表不会重建资料、密码或凭证创建表单。创建、刷新与撤销串行执行；临时明文绑定凭证 ID，撤销其他凭证不会清除它。离开账户页或登出时销毁组件、清除明文并中止未完成的请求；中止请求不保证撤销已提交的服务端操作。
+
 ### 后端测试
 
 先按[快速开始](#快速开始)准备虚拟环境与数据库，再执行：
@@ -181,6 +183,8 @@ Windows 使用 `.venv\Scripts\python.exe -m pytest`。
 `kanban_test` 由 [`deploy/initdb/01-test-db.sql`](deploy/initdb/01-test-db.sql) 在数据库卷首次初始化时创建并授权。已有卷不会重跑初始化脚本；缺少测试库时需手动创建并授予 `kanban` 用户权限，不要为此删除含有业务数据的卷。
 
 测试通过 `TestClient` 携带 `X-Kanban: 1`，使用 `MAIL_CAPTURE=1` 捕获验证码，不连接真实 SMTP。覆盖认证、请求头校验、验证码、看板初始化、邀请、角色权限、配额、附件、截止日期与主负责人等行为。
+
+凭证回归测试使用独立内存 SQLite，不连接 MariaDB：`python -m pytest tests/test_tokens.py -q`。覆盖摘要存储、仅创建时返回明文、Bearer 读写、凭证管理的 Cookie 限制、跨用户撤销隔离、项目权限、有限期过期与无限期持续有效、撤销失效、认证优先级及输入边界。
 
 ### 前端与浏览器回归
 
@@ -207,6 +211,29 @@ python tests/startup_browser.py
 
 **所有 `/api/` 下的 `POST`、`PUT`、`PATCH`、`DELETE` 请求必须携带 `X-Kanban: 1`，缺失返回 403。** 该自定义头用于 CSRF 防护，不代替登录和项目权限校验；前端 `static/js/api.js` 统一添加。
 
+### Agent 凭证
+
+登录网页后，点击侧栏底部的账号进入「Agent 凭证」，填写名称与有效天数（1–365 天，默认 30 天），或勾选「永不过期」，即可生成独立凭证。完整密钥只在创建成功时返回并临时显示，关闭明文、离开账户页或登出后不可找回；数据库仅保存 SHA-256 摘要。列表可查看名称和到期时间（或「永不过期」）、撤销凭证，过期或撤销后认证返回 401。无限期凭证不会自动失效，请在不再使用时主动撤销；现有凭证的到期时间不变。
+
+**凭证代表用户本人，拥有用户当前的全部权限，包括有权执行的删除操作。** 仅交给可信任的 agent。退出网页登录不会撤销凭证，需在账户页单独撤销；项目访问与角色校验继续复用现有权限模型。
+
+Agent 调用现有 API 时携带 `Authorization: Bearer <token>`，写操作仍必须携带 `X-Kanban: 1`，无需用户密码或浏览器 Cookie。网页继续使用 Cookie。若请求同时带 Cookie 和 Authorization，以 Authorization 为准；无效凭证不会回退到 Cookie。
+
+```bash
+# 通过运行环境注入 KANBAN_TOKEN，不要写入代码或提交到仓库。
+curl https://kanban.faweisi.com/api/projects \
+  -H "Authorization: Bearer $KANBAN_TOKEN"
+
+curl https://kanban.faweisi.com/api/projects \
+  -H "Authorization: Bearer $KANBAN_TOKEN" \
+  -H "X-Kanban: 1" \
+  -H "Content-Type: application/json" \
+  --data '{"name":"Agent 项目"}'
+```
+
+凭证管理接口仅接受网页登录 Cookie，不接受 Bearer 认证，避免 agent 自行创建新的长期凭证；创建/列表响应标记 `Cache-Control: no-store`。启动时会新建 `access_tokens` 表，已有 MySQL 表的 `expires_at` 若为非空字段，会自动升级为可空并保留现有到期时间。升级时数据库用户需有该表的 ALTER 权限。
+
+
 <details>
 <summary>主要端点速查</summary>
 
@@ -218,6 +245,8 @@ python tests/startup_browser.py
 | POST | `/api/auth/code` | 向未注册邮箱发送验证码 |
 | GET / PATCH | `/api/auth/me` | 读取 / 更新自己的资料 |
 | POST | `/api/auth/password` | 修改密码 |
+| GET / POST | `/api/auth/tokens` | 凭证列表 / 创建；创建体为 `{"name":"我的 Agent","expires_in_days":30}`；设为 `null` 表示永不过期，返回的 `expires_at` 也为 `null`；只有创建响应含 `token` |
+| DELETE | `/api/auth/tokens/{id}` | 撤销自己的凭证 |
 | GET | `/api/bootstrap` | 用户、项目列表、未读数、配额 |
 | GET / POST | `/api/projects` | 项目列表 / 新建；`?archived=true` 查看归档 |
 | GET / PATCH / DELETE | `/api/projects/{id}` | 详情 / 修改 / 删除 |

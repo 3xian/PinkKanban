@@ -3,6 +3,7 @@ import { installDrag } from "./dnd.js";
 import { canPullRefreshAt } from "./refresh.js";
 import { ACTIONS, COLORS, PRIORITIES, ROLES, avatar, canAdmin, canEdit, cardFaces, dueInfo, el, faceNode, fileSize, markdown, participantMembers, relative, responsibleField, safeColor } from "./format.js";
 import { icon as glyph } from "./icons.js";
+import { createTokenPanel } from "./tokens.js";
 
 window.kanbanGestures = Object.freeze({ canPullRefreshAt });
 
@@ -37,6 +38,7 @@ const app = document.getElementById("app");
 const drawer = document.getElementById("drawer");
 const modal = document.getElementById("modal");
 const toasts = document.getElementById("toasts");
+let tokenPanel = null;
 
 function toast(message) {
   const node = el("div", { class: "toast" }, glyph("info"), el("span", { text: message }));
@@ -174,6 +176,7 @@ async function route({ useBootstrap = false } = {}) {
     return;
   }
   const [name, id] = (location.hash.replace(/^#\/?/, "") || "projects").split("/");
+  if (name !== "account") clearAgentTokens();
   if (name === "board" && id) return openBoard(Number(id));
   if (name === "settings" && id) return openSettings(Number(id));
   if (name === "tasks") return openTasks();
@@ -244,6 +247,7 @@ function closeDrawer() {
 
 function render() {
   const authed = Boolean(state.user);
+  if (!authed) clearAgentTokens();
   document.body.classList.toggle("is-auth", !authed);
   document.querySelector('meta[name="theme-color"]')?.setAttribute("content", "#080b12");
   app.replaceChildren(authed ? shell() : authView());
@@ -783,6 +787,11 @@ function memberRow(person, data) {
   );
 }
 
+function clearAgentTokens() {
+  tokenPanel?.destroy();
+  tokenPanel = null;
+}
+
 function accountView() {
   return el("section", { class: "account-page" },
     el("div", { class: "page-head" }, el("div", {}, el("h2", { text: "账号" }), el("p", { text: "资料、密码和当前会话。" }))),
@@ -799,6 +808,10 @@ function accountView() {
       el("label", { class: "field" }, "新密码", el("input", { name: "new_password", type: "password", required: true, minlength: "8", autocomplete: "new-password" })),
       el("button", { class: "btn-ghost", text: "更新密码" }),
     ),
+    (tokenPanel ||= createTokenPanel(() => {
+      state.user = null;
+      render();
+    })).node,
     el("div", { class: "account-block" },
       el("h3", { text: "会话" }),
       el("button", { class: "btn-danger", "data-act": "logout", text: "退出登录" }),
@@ -1143,6 +1156,7 @@ const clicks = {
     go(`#/board/${node.dataset.project}`);
   },
   logout(node) {
+    clearAgentTokens();
     run(node, async () => { await api("/api/auth/logout", { method: "POST" }); state.user = null; render(); });
   },
   "cancel-invite"(node) {
