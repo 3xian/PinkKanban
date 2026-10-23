@@ -662,8 +662,8 @@ function columnNode(column) {
   return node;
 }
 
-const PRIORITY_ACCENT = { low: "#5aa7c8", medium: "#e0a15a", high: "#8b72ff", urgent: "#ff73ba" };
-const CARD_PALETTE = ["#739be4", "#a18ada", "#e5ac66", "#6fc7aa", "#d98fbe", "#6bc0ce"];
+const PRIORITY_ACCENT = { low: "#5aa7c8", medium: "#e0a15a", high: "#8b72ff", urgent: "#e59262" };
+const CARD_PALETTE = ["#739be4", "#a18ada", "#e5ac66", "#6fc7aa", "#e59262", "#6bc0ce"];
 
 function priorityLabel(priority) {
   return PRIORITIES.find(([value]) => value === priority)?.[1] || "";

@@ -146,6 +146,48 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         await self.page.go_back()
         await self.page.get_by_role('heading', name='项目', exact=True).wait_for()
         self.assertFalse(self.errors)
+    async def test_notification_badges_disappear_after_reading(self):
+        notes = [
+            {"id": i, "type": "project_created", "status": None, "read": False,
+             "title": f"通知 {i}", "body": "项目已创建", "actor": None,
+             "created_at": "2026-01-01T00:00:00"}
+            for i in (1, 2)
+        ]
+        def payload():
+            return {"items": notes, "unread": sum(not note["read"] for note in notes)}
+        async def notifications(route):
+            path = urlsplit(route.request.url).path
+            if path.endswith("/read-all"):
+                for note in notes:
+                    note["read"] = True
+                await route.fulfill(json={"ok": True, "count": 1})
+            elif path.endswith("/read"):
+                note_id = int(path.split("/")[-2])
+                next(note for note in notes if note["id"] == note_id)["read"] = True
+                await route.fulfill(json={"ok": True})
+            else:
+                await route.fulfill(json=payload())
+        await self.page.route("**/api/bootstrap", lambda r: r.fulfill(json={**DATA, "unread": payload()["unread"]}))
+        await self.page.route("**/api/notifications{,/**}", notifications)
+        await self.page.goto(self.url)
+        header_badge = self.page.locator(".workspace-tools [data-badge]")
+        await expect(header_badge).to_have_text("2")
+        await expect(header_badge).to_be_visible()
+        await self.page.get_by_role("button", name="查看通知", exact=True).click()
+        await self.page.locator('.note[data-id="1"]').click()
+        await expect(header_badge).to_have_text("1")
+        await expect(header_badge).to_be_visible()
+        await self.page.get_by_role("button", name="全部已读", exact=True).click()
+        await expect(self.page.locator(".note.is-unread")).to_have_count(0)
+        for selector in (".workspace-tools [data-badge]", ".nav-btn [data-badge]"):
+            await expect(self.page.locator(selector)).to_be_hidden()
+        await self.page.set_viewport_size({"width": 390, "height": 844})
+        await expect(self.page.locator(".tabbar [data-badge]")).to_be_hidden()
+        await self.page.reload()
+        await self.page.locator(".shell").wait_for()
+        await expect(self.page.locator(".workspace-tools [data-badge]")).to_be_hidden()
+        self.assertFalse(self.errors)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
