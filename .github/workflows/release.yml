@@ -8,7 +8,7 @@ on:
       tag:
         description: Existing version tag (vMAJOR.MINOR.PATCH)
         required: true
-        default: v1.0.0
+        default: v1.0.1
         type: string
       publish:
         description: Publish to GitHub Release (false only builds a signed artifact)

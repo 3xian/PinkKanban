@@ -11,7 +11,8 @@ from pathlib import Path
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 import unittest
-from playwright.async_api import async_playwright
+from urllib.parse import urlsplit
+from playwright.async_api import async_playwright, expect
 
 ROOT = Path(__file__).resolve().parents[1]
 CSP = ("default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
@@ -49,9 +50,18 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         await self.page.route('https://fonts.googleapis.com/**', lambda r: r.abort())
         await self.page.route('https://fonts.gstatic.com/**', lambda r: r.abort())
         self.requests = []
+        responses = {
+            '/api/bootstrap': DATA,
+            '/api/projects': {'projects': [], 'quota': DATA['quota']},
+            '/api/auth/tokens': {'items': []},
+        }
         async def api(route):
             self.requests.append(route.request.url)
-            await route.fulfill(json=DATA if '/bootstrap' in route.request.url else {'projects': [], 'quota': DATA['quota']})
+            path = urlsplit(route.request.url).path
+            if path not in responses:
+                await route.fulfill(status=404, json={'detail': f'Unexpected test API endpoint: {path}'})
+                return
+            await route.fulfill(json=responses[path])
         await self.page.route('**/api/**', api)
     async def asyncTearDown(self):
         await self.browser.close()
@@ -132,6 +142,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         await self.page.evaluate('location.hash = "#/account"')
         await self.page.locator('.shell').wait_for()
         await self.page.locator('[data-form=account]').wait_for(state='visible')
+        await expect(self.page.locator('[data-token-form] button[type=submit]')).to_be_enabled()
         await self.page.go_back()
         await self.page.get_by_role('heading', name='项目', exact=True).wait_for()
         self.assertFalse(self.errors)

@@ -56,6 +56,9 @@ public final class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // The navigation-bar theme attribute starts at API 27; this flag also supports API 26.
+        View decor = getWindow().getDecorView();
+        decor.setSystemUiVisibility(decor.getSystemUiVisibility() | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
         buildLayout();
         configureWebView();
         if (Build.VERSION.SDK_INT >= 33) {
@@ -75,7 +78,7 @@ public final class MainActivity extends Activity {
     private void buildLayout() {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(BACKGROUND);
+        root.setBackgroundColor(getColor(R.color.system_bar_background));
         root.setOnApplyWindowInsetsListener((view, insets) -> {
             if (Build.VERSION.SDK_INT >= 30) {
                 android.graphics.Insets bars = insets.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());

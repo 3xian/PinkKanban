@@ -2,9 +2,9 @@
 
 原生 Java Android 工程，应用名 **看板**，默认服务 `https://kanban.faweisi.com`。首版使用 WebView 承载现有移动端界面，项目、看板、任务、通知、成员管理、清单和评论与网页共用功能和权限。最低 Android 8.0（API 26），编译/目标 API 36。
 
-Android 侧不显示原生顶栏，提供页面顶部下拉刷新、自适应系统栏与键盘、断网/服务错误重试、登录 Cookie 保持、返回键依次关闭弹层/卡片/侧边栏并返回上个页面、文件选择上传，以及带登录会话的附件保存。横向滑动和网页内独立滚动区域不会触发刷新。外部链接交给系统浏览器，附件使用系统“保存到”选择器，无需存储或相机权限。
+Android 侧不显示原生顶栏，顶部状态栏和底部导航栏使用浅色背景（`#FAF9F7`）及深色图标，兼容透明系统栏区域与手势/三键导航。提供页面顶部下拉刷新、自适应键盘、断网/服务错误重试、登录 Cookie 保持、返回键依次关闭弹层/卡片/侧边栏并返回上个页面、文件选择上传，以及带登录会话的附件保存。横向滑动和网页内独立滚动区域不会触发刷新。外部链接交给系统浏览器，附件使用系统“保存到”选择器，无需存储或相机权限。
 
-这是在线客户端；没有离线编辑、后台系统推送或独立原生看板 UI。服务更新会同步反映在客户端。首次联网需要设备上的 Android System WebView 可用。
+这是在线客户端；没有离线编辑、后台系统推送或独立原生看板 UI。服务更新会同步反映在客户端；系统栏样式属于原生 APK，修改后需重新构建并安装，刷新网页不会更新。首次联网需要设备上的 Android System WebView 可用。
 
 ## 构建
 
@@ -22,7 +22,7 @@ sdk.dir=F\:/AndroidSDK
 cmd.exe /c android\gradlew.bat -p android assembleDebug testDebugUnitTest lintDebug
 ```
 
-调试 APK：`app/build/outputs/apk/debug/app-debug.apk`，包名 `com.faweisi.kanban.debug`。正式包名 `com.faweisi.kanban`，版本 `1.0.0`。正式构建：
+调试 APK：`app/build/outputs/apk/debug/app-debug.apk`，包名 `com.faweisi.kanban.debug`。正式包名 `com.faweisi.kanban`，版本 `1.0.1`（`versionCode=2`）。正式构建：
 
 ```powershell
 cmd.exe /c android\gradlew.bat -p android assembleRelease lintRelease
@@ -38,7 +38,7 @@ GitHub Actions 的 `CI` 在分支 push、PR 和手动运行时检查后端 API�
 
 仓库 Secrets：`ANDROID_KEYSTORE_BASE64`（密钥库文件的 Base64）、`ANDROID_KEY_ALIAS`、`ANDROID_STORE_PASSWORD`、`ANDROID_KEY_PASSWORD`。必须沿用现有发布密钥，不要每次生成新密钥。签名仅在独立发布任务中进行，密钥临时文件会清除。
 
-也可以手动运行 `Android Release`：`publish=false` 默认验证所选分支并生成签名 Artifact，标签字段指定预期 APK 版本；`publish=true` 则构建标签所指向的提交并更新 GitHub Release。试运行当前分支时可填 `v1.0.0`，无需移动现有标签。
+也可以手动运行 `Android Release`：`publish=false` 默认验证所选分支并生成签名 Artifact，标签字段指定预期 APK 版本；`publish=true` 则构建标签所指向的提交并更新 GitHub Release。试运行当前分支时可填 `v1.0.1`，无需移动现有标签。
 
 ## 本地验收
 
