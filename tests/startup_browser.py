@@ -64,7 +64,6 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await page.locator('.startup').is_visible())
         self.assertTrue(await page.locator('noscript p').is_visible())
         self.assertEqual(await page.locator('noscript p').inner_text(), '请启用 JavaScript 后重新加载看板。')
-        self.assertEqual(await page.locator('body').evaluate('(el) => getComputedStyle(el).backgroundColor'), 'rgb(8, 11, 18)')
         await context.close()
     async def test_delayed_assets_show_fallback_then_projects(self):
         async def delayed(route):

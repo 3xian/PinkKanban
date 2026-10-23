@@ -102,6 +102,13 @@ def test_project_board_and_quota(client):
     assert item.status_code == 200
     checked = client.patch(f"/api/checklist-items/{item.json()['id']}", json={"done": True})
     assert checked.json()["done"] is True
+    another = client.post(f"/api/checklists/{listed.json()['id']}/items", json={"text": "桌面宽度"})
+    assert another.status_code == 200
+    assert client.patch(f"/api/checklist-items/{another.json()['id']}", json={"done": True}).status_code == 200
+    assert client.post(f"/api/checklists/{listed.json()['id']}/items", json={"text": "键盘操作"}).status_code == 200
+    updated_board = client.get(f"/api/projects/{project_id}/board").json()
+    board_card = next(card for column in updated_board["columns"] for card in column["cards"] if card["id"] == card_id)
+    assert board_card["checklist"] == {"done": 2, "total": 3}
     comment = client.post(f"/api/cards/{card_id}/comments", json={"body": "记得看移动端"})
     assert comment.status_code == 200
     assert comment.json()["comments"][0]["body"] == "记得看移动端"

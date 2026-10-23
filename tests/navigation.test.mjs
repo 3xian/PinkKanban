@@ -21,7 +21,7 @@ test('Escape and native back share overlay priority and report whether handled',
     closeFilterPops() { filterOpen = false; actions.push('filter'); },
     paintModal() { actions.push('modal'); },
     closeDrawer() { state.cardId = null; actions.push('card'); },
-    render() { actions.push('sidebar'); },
+    setSidebar(open) { state.sidebar = open; actions.push('sidebar'); },
   });
   assert.equal(window.kanbanNavigation.handleBack(), true);
   listener({ key: 'Escape' });

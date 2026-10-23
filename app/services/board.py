@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import Integer, func, select, type_coerce
 from sqlalchemy.orm import Session
 
 from app.constants import COLORS, MAX_COLUMNS, MAX_LABELS
@@ -146,7 +146,7 @@ def board_dict(db: Session, project_id: int, user: User) -> dict:
         for link in db.scalars(select(CardAssignee).where(CardAssignee.card_id.in_(card_ids))):
             assignee_map[link.card_id].append(link.user_id)
         check_rows = db.execute(
-            select(Checklist.card_id, func.count(ChecklistItem.id), func.coalesce(func.sum(ChecklistItem.done), 0))
+            select(Checklist.card_id, func.count(ChecklistItem.id), func.coalesce(type_coerce(func.sum(ChecklistItem.done), Integer), 0))
             .join(ChecklistItem, ChecklistItem.checklist_id == Checklist.id)
             .where(Checklist.card_id.in_(card_ids))
             .group_by(Checklist.card_id)

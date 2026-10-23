@@ -3,7 +3,7 @@
   "short_name": "看板",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#080b12",
-  "theme_color": "#080b12",
+  "background_color": "#f7f6f9",
+  "theme_color": "#f7f6f9",
   "icons": [{ "src": "/static/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
 }

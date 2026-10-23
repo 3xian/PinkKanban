@@ -199,6 +199,7 @@ async function loadProjects() {
 }
 
 async function openBoard(id) {
+  if (state.compose?.projectId !== id) state.compose = null;
   state.projectId = id;
   state.view = "board";
   state.cardId = null;
@@ -249,7 +250,7 @@ function render() {
   const authed = Boolean(state.user);
   if (!authed) clearAgentTokens();
   document.body.classList.toggle("is-auth", !authed);
-  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", "#080b12");
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", "#f7f6f9");
   app.replaceChildren(authed ? shell() : authView());
   if (!authed) startAuthMotion(app.querySelector(".auth"));
   paintBadges();
@@ -435,6 +436,13 @@ function field(label, name, type, placeholder) {
   return el("label", { class: "field" }, label, el("input", { name, type, placeholder, required: true, autocomplete: name === "password" ? "current-password" : "email" }));
 }
 
+function setSidebar(open) {
+  state.sidebar = open;
+  app.querySelector(".sidebar")?.classList.toggle("is-open", open);
+  app.querySelector(".backdrop")?.toggleAttribute("hidden", !open);
+  app.querySelector("[data-act=toggle-side]")?.setAttribute("aria-expanded", String(open));
+}
+
 function shell() {
   return el("div", { class: "shell" },
     el("aside", { class: state.sidebar ? "sidebar is-open" : "sidebar" },
@@ -444,7 +452,7 @@ function shell() {
         nav("tasks", "我的任务", "tasks"),
         nav("notifications", "通知", "bell", true),
       ),
-      el("div", { class: "side-label", text: "最近" }),
+      el("div", { class: "side-label", text: "工作空间 / 最近项目" }),
       el("div", { class: "side-projects" }, ...state.projects.slice(0, 12).map((project) => {
         const link = el("button", { class: project.id === state.projectId ? "project-link is-on" : "project-link", "data-act": "open-project", "data-id": project.id });
         const dot = el("i", { class: "dot" });
@@ -456,10 +464,18 @@ function shell() {
         el("button", { class: "user-chip", "data-act": "nav", "data-view": "account" }, avatar(state.user), el("span", {}, el("strong", { text: state.user.display_name }), el("small", { text: state.user.email }))),
       ),
     ),
-    state.sidebar ? el("button", { class: "backdrop", "data-act": "close-side", "aria-label": "关闭菜单" }) : null,
+    el("button", { class: "backdrop", hidden: !state.sidebar, "data-act": "close-side", "aria-label": "关闭菜单" }),
     el("div", { class: "main" },
-      el("button", { class: "icon-btn floating-menu", "data-act": "toggle-side", "aria-label": "菜单" }, glyph("menu")),
-      el("div", { class: "view" }, viewBody()),
+      el("header", { class: "workspace-header" },
+        el("button", { class: "icon-btn floating-menu", "data-act": "toggle-side", "aria-label": "菜单", "aria-expanded": String(state.sidebar) }, glyph("menu")),
+        el("div", { class: "workspace-welcome" }, el("small", { text: "欢迎回来，" }), el("strong", { text: state.user.display_name })),
+        el("div", { class: "workspace-context", text: { projects: "项目空间", board: "项目看板", tasks: "我的任务", notifications: "消息通知", settings: "项目设置", account: "账号设置" }[state.view] || "工作空间" }),
+        el("div", { class: "workspace-tools" },
+          el("button", { class: "icon-btn", "data-act": "nav", "data-view": "notifications", "aria-label": "查看通知" }, glyph("bell"), el("span", { class: "badge", "data-badge": "1" })),
+          el("button", { class: "icon-btn", "data-act": "nav", "data-view": "account", "aria-label": "账号设置" }, glyph("user")),
+        ),
+      ),
+      el("div", { class: state.view === "board" ? "view is-board" : "view" }, viewBody()),
     ),
     el("nav", { class: "tabbar" },
       tab("projects", "项目", "board"),
@@ -529,12 +545,19 @@ function projectCard(project) {
 function boardView() {
   if (!state.board) return emptyState("选择一个项目");
   const project = state.board.project;
+  const today = new Date();
+  const firstColumn = state.board.columns[0];
   return el("section", { class: "board-page" },
     el("div", { class: "board-head" },
-      el("div", {}, el("h2", { text: project.name }), el("p", { class: "muted", text: project.description || "把卡片拖到它该在的位置。" })),
+      el("div", { class: "board-date" },
+        el("strong", { text: today.toLocaleDateString("zh-CN", { month: "long" }) }),
+        el("span", { text: today.toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric", weekday: "long" }) }),
+      ),
+      el("div", { class: "board-heading" }, el("h2", { text: project.name }), el("p", { class: "muted", text: project.description || "把卡片拖到它该在的位置。" })),
       el("div", { class: "board-people" },
         el("div", { class: "faces" }, ...state.board.members.slice(0, 5).map((person) => avatar(person))),
         el("button", { class: "btn-ghost", "data-act": "open-settings", "data-id": project.id }, glyph("user"), el("span", { text: "成员" })),
+        editable() && firstColumn && !state.filters.archived ? el("button", { class: "btn-primary", "data-act": "compose", "data-column": firstColumn.id }, glyph("plus"), el("span", { text: "创建任务" })) : null,
       ),
     ),
     el("div", { class: "filters" },
@@ -622,6 +645,7 @@ function columnNode(column) {
     el("span", { class: over ? "wip is-over" : "count", text: column.wip_limit ? `${live.length} / ${column.wip_limit}` : String(live.length) }),
     el("span", { class: "spacer" }),
     editable() ? el("button", { class: "icon-btn icon-btn-sm", "data-act": "edit-column", "data-id": column.id, "aria-label": "列表设置" }, glyph("settings")) : null,
+    editable() && !state.filters.archived ? el("button", { class: "icon-btn icon-btn-sm", "data-act": "compose", "data-column": column.id, "aria-label": `在${column.name}添加卡片` }, glyph("plus")) : null,
   );
   const body = el("div", { class: "column-cards" });
   for (const card of cards) body.append(cardNode(card, column));
@@ -629,7 +653,7 @@ function columnNode(column) {
   if (editable() && !state.filters.archived) {
     if (state.compose?.columnId === column.id) {
       node.append(el("form", { class: "composer", "data-form": "card" },
-        el("input", { name: "title", placeholder: "卡片标题", "data-autofocus": "1", required: true }),
+        el("input", { name: "title", value: state.compose.title, placeholder: "卡片标题", "data-autofocus": "1", required: true }),
         el("input", { type: "hidden", name: "column_id", value: column.id }),
         el("button", { class: "btn-primary btn-tiny", text: "添加" }),
       ));
@@ -639,6 +663,7 @@ function columnNode(column) {
 }
 
 const PRIORITY_ACCENT = { low: "#5aa7c8", medium: "#e0a15a", high: "#8b72ff", urgent: "#ff73ba" };
+const CARD_PALETTE = ["#739be4", "#a18ada", "#e5ac66", "#6fc7aa", "#d98fbe", "#6bc0ce"];
 
 function priorityLabel(priority) {
   return PRIORITIES.find(([value]) => value === priority)?.[1] || "";
@@ -658,19 +683,29 @@ function cardNode(card, column) {
     "data-column": column.id,
   });
   if (accent) node.style.setProperty("--c", accent);
+  node.style.setProperty("--card-accent", accent || CARD_PALETTE[card.id % CARD_PALETTE.length]);
   const labels = state.board.labels.filter((label) => card.label_ids.includes(label.id));
   const head = el("div", { class: "card-head" }, el("h3", { class: "card-title", text: card.title }));
   if (card.priority && card.priority !== "none") head.append(el("span", { class: `prio-mark prio-${card.priority}`, text: priorityLabel(card.priority) }));
-  node.append(head);
-  if (labels.length) node.append(el("div", { class: "pills" }, ...labels.map((label) => {
-    const pill = el("span", { class: "pill", text: label.name });
+  if (labels.length) node.append(el("div", { class: "pills card-labels" }, ...labels.map((label) => {
+    const pill = el("span", { class: "pill", text: `#${label.name}` });
     pill.style.setProperty("--c", safeColor(label.color));
     return pill;
   })));
+  node.append(head);
+  if (card.excerpt) node.append(el("p", { class: "card-excerpt", text: card.excerpt }));
+  if (card.checklist.total) {
+    const progress = Math.round(card.checklist.done / card.checklist.total * 100);
+    node.append(el("div", { class: "card-progress" },
+      el("div", { class: "progress-caption" }, el("span", { text: "清单进度" }), el("strong", { text: `${progress}%` })),
+      el("div", { class: "progress-track", role: "progressbar", "aria-label": "清单完成进度", "aria-valuenow": progress, "aria-valuemin": 0, "aria-valuemax": 100, style: `--progress:${progress}%` }),
+    ));
+  }
   const bits = [];
   if (due) bits.push(metaBit("calendar", due.text, due.over ? "due is-over" : due.today ? "due is-today" : "due"));
   if (card.checklist.total) bits.push(metaBit("check", `${card.checklist.done}/${card.checklist.total}`));
   if (card.comment_count) bits.push(metaBit("comment", String(card.comment_count)));
+  if (card.attachment_count) bits.push(metaBit("paperclip", String(card.attachment_count)));
   const faces = cardFaces(card, state.board.members);
   if (bits.length || faces.length) node.append(el("div", { class: "card-foot" }, ...bits, el("span", { class: "spacer" }), ...faces.map(faceNode)));
   return node;
@@ -1028,21 +1063,20 @@ const clicks = {
     });
   },
   nav(node) {
-    state.sidebar = false;
+    setSidebar(false);
     if (node.dataset.view === "board") {
       if (state.projectId) go(`#/board/${state.projectId}`);
       else go("#/projects");
     } else go(`#/${node.dataset.view}`);
   },
   "toggle-side"() {
-    state.sidebar = !state.sidebar;
-    render();
+    setSidebar(!state.sidebar);
   },
   "close-side"() {
-    state.sidebar = false;
-    render();
+    setSidebar(false);
   },
   "open-project"(node) {
+    setSidebar(false);
     go(`#/board/${idOf(node)}`);
   },
   "open-settings"(node) {
@@ -1081,8 +1115,11 @@ const clicks = {
   },
 
   compose(node) {
-    state.compose = { columnId: Number(node.dataset.column) };
-    paintCanvas();
+    const columnId = Number(node.dataset.column);
+    if (state.compose?.columnId !== columnId) {
+      state.compose = { projectId: state.projectId, columnId, title: state.compose?.title ?? "" };
+      paintCanvas();
+    }
     document.querySelector("[data-autofocus]")?.focus();
   },
   "new-column"() {
@@ -1337,6 +1374,9 @@ document.addEventListener("change", (event) => {
 });
 
 document.addEventListener("input", (event) => {
+  if (state.compose && event.target.matches('.composer input[name="title"]')) {
+    state.compose.title = event.target.value;
+  }
   if (event.target.id === "board-search") {
     state.filters.q = event.target.value;
     paintCanvas();
@@ -1360,10 +1400,8 @@ function handleBack() {
     state.modal = null;
     paintModal();
   } else if (state.cardId) closeDrawer();
-  else if (state.sidebar) {
-    state.sidebar = false;
-    render();
-  } else return false;
+  else if (state.sidebar) setSidebar(false);
+  else return false;
   return true;
 }
 

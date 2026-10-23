@@ -31,9 +31,38 @@ test('nested vertical scrollers block refresh but the root scroller allows it', 
   assert.equal(allowsPullRefresh(element('', null, { scrollHeight: 300 }), null), true);
 });
 
+test('the primary page scroller allows refresh only at its top', () => {
+  const page = element('', null, { scrollHeight: 500, overflowY: 'auto', scrollTop: 0 });
+  const text = element('', page);
+  assert.equal(allowsPullRefresh(text, page), true);
+  page.scrollTop = 120;
+  assert.equal(allowsPullRefresh(text, page), false);
+  page.scrollTop = 0;
+  const nested = element('', page, { scrollHeight: 300, overflowY: 'auto' });
+  assert.equal(allowsPullRefresh(element('', nested), page), false);
+});
+
+test('native refresh checks page scroll even when touching the fixed header', () => {
+  const page = element('', null, { scrollHeight: 500, overflowY: 'auto', scrollTop: 0 });
+  globalThis.document = {
+    scrollingElement: { scrollTop: 0 },
+    querySelector: () => page,
+    elementFromPoint: () => element(''),
+  };
+  globalThis.window = { innerWidth: 400, innerHeight: 800 };
+  assert.equal(canPullRefreshAt(0.5, 0.02), true);
+  page.scrollTop = 120;
+  assert.equal(canPullRefreshAt(0.5, 0.02), false);
+  page.scrollTop = 0;
+  assert.equal(canPullRefreshAt(0.5, 0.02), true);
+  delete globalThis.document;
+  delete globalThis.window;
+});
+
 test('native coordinates resolve the visible viewport and default viewport', () => {
   const hits = [];
   globalThis.document = {
+    querySelector: () => null,
     scrollingElement: null,
     elementFromPoint: (x, y) => { hits.push([x, y]); return element(); },
   };
