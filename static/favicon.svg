@@ -1,17 +1,15 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <defs>
-    <linearGradient id="ring" x1="2" y1="2" x2="30" y2="30" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#9774e4"/>
-      <stop offset="1" stop-color="#6840bb"/>
-    </linearGradient>
-    <linearGradient id="mid" x1="13" y1="6" x2="19" y2="26" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#d7ccff"/>
-      <stop offset="1" stop-color="#ffffff"/>
+    <linearGradient id="paper" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#f2edff"/>
+      <stop offset="1" stop-color="#fce5ee"/>
     </linearGradient>
   </defs>
-  <rect width="32" height="32" rx="9" fill="url(#ring)"/>
-  <rect x=".7" y=".7" width="30.6" height="30.6" rx="8.3" fill="none" stroke="#ffffff" stroke-opacity=".3" stroke-width="1.4"/>
-  <rect x="6.2" y="7" width="4.6" height="18" rx="1.6" fill="#ffffff" opacity=".65"/>
-  <rect x="13.7" y="7" width="4.6" height="13" rx="1.6" fill="url(#mid)"/>
-  <rect x="21.2" y="7" width="4.6" height="8.5" rx="1.6" fill="#ffffff" opacity=".9"/>
+  <rect width="64" height="64" rx="20" fill="url(#paper)"/>
+  <path d="M19 15H30Q37 15 37 22V43Q37 50 30 50H19Q12 50 12 43V22Q12 15 19 15Z" transform="rotate(-14 24.5 32.5)" fill="#7040cf"/>
+  <g transform="rotate(12 40 36)">
+    <path d="M35 20H43L52 29V45Q52 51 46 51H35Q29 51 29 45V26Q29 20 35 20Z" fill="#ce87a8"/>
+    <path d="M43 20V25Q43 29 47 29H52Z" fill="#f7d4e3"/>
+  </g>
+  <path d="M47 8Q47 14 53 14Q47 14 47 20Q47 14 41 14Q47 14 47 8Z" fill="#7040cf"/>
 </svg>

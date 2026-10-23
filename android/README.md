@@ -4,7 +4,7 @@
 
 Android 侧不显示原生顶栏，顶部状态栏和底部导航栏使用浅色背景（`#FAF9F7`）及深色图标，兼容透明系统栏区域与手势/三键导航。提供页面顶部下拉刷新、自适应键盘、断网/服务错误重试、登录 Cookie 保持、返回键依次关闭弹层/卡片/侧边栏并返回上个页面、文件选择上传，以及带登录会话的附件保存。横向滑动和网页内独立滚动区域不会触发刷新。外部链接交给系统浏览器，附件使用系统“保存到”选择器，无需存储或相机权限。
 
-这是在线客户端；没有离线编辑、后台系统推送或独立原生看板 UI。服务更新会同步反映在客户端；系统栏样式属于原生 APK，修改后需重新构建并安装，刷新网页不会更新。首次联网需要设备上的 Android System WebView 可用。
+这是在线客户端；没有离线编辑、后台系统推送或独立原生看板 UI。服务更新会同步反映在客户端；系统栏样式和桌面图标属于原生 APK，修改后需重新构建并安装，刷新网页不会更新。桌面图标与 Web 共用双便签、折角和星芒的图形语言，使用浅紫粉渐变背景，前景保留在自适应图标安全区域内。首次联网需要设备上的 Android System WebView 可用。
 
 ## 构建
 
@@ -22,7 +22,7 @@ sdk.dir=F\:/AndroidSDK
 cmd.exe /c android\gradlew.bat -p android assembleDebug testDebugUnitTest lintDebug
 ```
 
-调试 APK：`app/build/outputs/apk/debug/app-debug.apk`，包名 `com.faweisi.kanban.debug`。正式包名 `com.faweisi.kanban`，版本 `1.0.1`（`versionCode=2`）。正式构建：
+调试 APK：`app/build/outputs/apk/debug/app-debug.apk`，包名 `com.faweisi.kanban.debug`。正式包名 `com.faweisi.kanban`，版本 `1.0.1`（`versionCode=3`）。正式构建：
 
 ```powershell
 cmd.exe /c android\gradlew.bat -p android assembleRelease lintRelease
