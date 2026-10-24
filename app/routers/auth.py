@@ -98,6 +98,8 @@ def update_me(body: ProfileIn, user: User = Depends(current_user), db: Session =
         user.display_name = data["display_name"]
     if "avatar_color" in data:
         user.avatar_color = data["avatar_color"]
+    if "avatar_id" in data:
+        user.avatar_id = data["avatar_id"]
     db.add(user)
     return profile(user)
 

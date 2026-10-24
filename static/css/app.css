@@ -283,6 +283,7 @@ button.pill.is-on { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c, #8b7
 .due.is-over { color: #a33657; font-weight: 600; }
 .avatar { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: color-mix(in srgb, var(--c, #9a86c3) 35%, white); color: color-mix(in srgb, var(--c, #9a86c3) 38%, #292031); font-size: 11px; font-weight: 650; flex: none; }
 .avatar.lg { width: 40px; height: 40px; font-size: 14px; }
+.avatar > img { display: block; width: 100%; height: 100%; min-width: 0; min-height: 0; object-fit: cover; border-radius: inherit; }
 .faces { display: flex; }
 .faces .avatar { width: 28px; height: 28px; margin-left: -7px; border: 2px solid #fffdfa; }
 .faces .avatar:first-child { margin-left: 0; }
@@ -380,9 +381,29 @@ button.pill.is-on { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c, #8b7
 .settings-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(240px, .75fr); gap: 30px; align-items: start; }
 .settings-main, .settings-side { min-width: 0; }
 .settings-block, .account-block { margin-top: 10px; padding-top: 20px; border-top: 1px solid var(--border-subtle); }
-.account-page { max-width: 680px; }
-.account-id { display: flex; align-items: center; gap: 12px; margin: 6px 0 12px; }
+.account-page { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 32px; }
+.account-page > * { min-width: 0; }
+.account-page > .page-head { margin: 0; }
+.account-page > .account-block { margin: 0; }
+.account-id { display: flex; align-items: center; justify-self: end; gap: 12px; }
+.account-id > div { min-width: 0; overflow-wrap: anywhere; }
 .account-id strong { display: block; font-size: 16px; }
+.avatar-picker { display: grid; gap: 10px; }
+.avatar-categories { display: flex; flex-wrap: wrap; gap: 6px; }
+.avatar-category { padding: 6px 12px; border: 1px solid var(--border-default); border-radius: 8px; background: var(--bg-raised); color: var(--text-secondary); font-size: 12px; }
+.avatar-category[aria-pressed="true"] { color: var(--violet); background: #f0e8f9; border-color: var(--border-highlight); }
+.avatar-choices { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; max-width: 432px; }
+.avatar-choice { display: grid; place-items: center; min-width: 0; padding: 4px; border: 2px solid transparent; border-radius: 12px; background: transparent; }
+.avatar-choice:hover { background: var(--bg-surface-hover); }
+.avatar-choice[aria-pressed="true"] { border-color: var(--violet); background: #f0e8f9; }
+.avatar-choice img { display: block; width: 100%; max-width: 56px; height: auto; aspect-ratio: 1; object-fit: cover; border-radius: 50%; }
+.avatar-caption { color: var(--text-muted); font-size: 11px; }
+.account-page > [data-token-panel], .account-session { grid-column: 1 / -1; }
+.account-page [data-token-form] { display: grid; grid-template-columns: minmax(0, 1fr) 160px auto auto; align-items: end; gap: 16px; }
+.account-page [data-token-form] .field { margin: 0; }
+.account-page [data-token-form] .check { min-height: 42px; }
+.account-session { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.account-session h3 { margin: 0; }
 .readonly { font-size: 13px; color: var(--text-secondary); overflow-wrap: anywhere; }
 .token-row { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border-subtle); }
 .token-meta { flex: 1; min-width: 0; overflow-wrap: anywhere; }
@@ -506,6 +527,12 @@ button.pill.is-on { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c, #8b7
   .space-board { width: 280px; height: 186px; }
   .auth-scene { opacity: .4; }
   .auth-card { max-height: calc(100dvh - 112px); padding: 26px; }
+}
+@media (max-width: 700px) {
+  .account-page { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .account-id { justify-self: start; }
+  .account-page [data-token-form] { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .account-page [data-token-form] > button { justify-self: start; }
 }
 @media (max-width: 480px) {
   .workspace-header { padding: 12px; gap: 9px; }

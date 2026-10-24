@@ -4,6 +4,7 @@ import json
 from datetime import date, datetime
 
 from app.models import User
+from app.constants import AVATAR_IDS
 
 
 def dumps(data: dict) -> str:
@@ -37,6 +38,7 @@ def excerpt(text: str | None, limit: int = 140) -> str:
 
 def user_brief(user: User, *, email: bool = False) -> dict:
     data = {"id": user.id, "display_name": user.display_name, "avatar_color": user.avatar_color}
+    data["avatar_id"] = user.avatar_id if user.avatar_id in AVATAR_IDS else AVATAR_IDS[((user.id or 1) - 1) % len(AVATAR_IDS)]
     if email:
         data["email"] = user.email
     return data

@@ -53,7 +53,8 @@ test('board shows the responsible avatar once and marks only that person', () =>
   const other = faceNode(faces[1]);
   assert.equal(lead.className, 'avatar is-lead');
   assert.equal(lead.title, '主负责人 乙');
-  assert.equal(lead.textContent, '乙');
+  assert.equal(lead.children[0].attributes.alt, '乙');
+  assert.equal(lead.children[0].attributes.src, '/static/avatars/male-2.webp?v=1');
   assert.equal(other.className, 'avatar');
   assert.equal(other.title, '甲');
 });
@@ -71,7 +72,7 @@ test('drawer field shows unset or the selected member and hides that member from
   const chosen = responsibleField({ responsible_user_id: 2, assignee_ids: [2, 1] }, members, false);
   const avatar = chosen.children.find((node) => node.className.includes('avatar'));
   const select = chosen.children.find((node) => node.tagName === 'SELECT');
-  assert.equal(avatar.textContent, '乙');
+  assert.equal(avatar.children[0].attributes.alt, '乙');
   assert.equal(select.attributes.disabled, 'true');
   assert.equal(select.children.find((option) => option.attributes.value === '2').attributes.selected, 'true');
   assert.equal(select.children[0].attributes.selected, undefined);

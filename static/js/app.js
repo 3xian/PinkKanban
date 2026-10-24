@@ -4,6 +4,7 @@ import { canPullRefreshAt } from "./refresh.js";
 import { ACTIONS, COLORS, PRIORITIES, ROLES, avatar, canAdmin, canEdit, cardFaces, dueInfo, el, faceNode, fileSize, markdown, participantMembers, relative, responsibleField, safeColor } from "./format.js";
 import { icon as glyph } from "./icons.js";
 import { createTokenPanel } from "./tokens.js";
+import { createAvatarPicker } from "./avatar-picker.js";
 
 window.kanbanGestures = Object.freeze({ canPullRefreshAt });
 
@@ -834,7 +835,7 @@ function accountView() {
     el("form", { class: "account-block", "data-form": "account" },
       el("h3", { text: "资料" }),
       el("label", { class: "field" }, "显示名", el("input", { name: "display_name", value: state.user.display_name, required: true })),
-      el("div", { class: "field" }, "头像颜色", colorPicker(state.user.avatar_color)),
+      el("div", { class: "field" }, "头像", createAvatarPicker(state.user)),
       el("button", { class: "btn-primary", text: "保存" }),
     ),
     el("form", { class: "account-block", "data-form": "password" },
@@ -847,7 +848,7 @@ function accountView() {
       state.user = null;
       render();
     })).node,
-    el("div", { class: "account-block" },
+    el("div", { class: "account-block account-session" },
       el("h3", { text: "会话" }),
       el("button", { class: "btn-danger", "data-act": "logout", text: "退出登录" }),
     ),
@@ -1312,7 +1313,7 @@ const forms = {
     render();
   },
   async account(data) {
-    state.user = await api("/api/auth/me", { method: "PATCH", body: { display_name: data.display_name, avatar_color: state.color } });
+    state.user = await api("/api/auth/me", { method: "PATCH", body: { display_name: data.display_name, avatar_id: data.avatar_id } });
     toast("已保存");
     render();
   },

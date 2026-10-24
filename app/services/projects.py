@@ -98,6 +98,7 @@ def project_detail(db: Session, project_id: int, user: User) -> dict:
                     "email": person.email if person else payload.get("email", ""),
                     "display_name": person.display_name if person else "",
                     "avatar_color": person.avatar_color if person else COLORS[0],
+                    "avatar_id": user_brief(person)["avatar_id"] if person else None,
                     "role": payload.get("role", "member"),
                     "created_at": iso(note.created_at),
                 }

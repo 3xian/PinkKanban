@@ -1,3 +1,5 @@
+import { avatarId, avatarPath } from "./avatars.js";
+
 export const COLORS = ["#D63A56", "#C47B2B", "#5C6B52", "#3D6B8A", "#7A5EA8", "#C46B4A", "#2F6F6A", "#8A4B5A"];
 export const PRIORITIES = [
   ["none", "无"],
@@ -62,9 +64,9 @@ export function initial(name) {
 }
 
 export function avatar(person, extra = "") {
-  const node = el("span", { class: `avatar ${extra}`.trim(), text: initial(person?.display_name), title: person?.display_name || "" });
-  node.style.setProperty("--c", safeColor(person?.avatar_color, "#3D6B8A"));
-  return node;
+  return el("span", { class: `avatar ${extra}`.trim(), title: person?.display_name || "" },
+    el("img", { src: avatarPath(avatarId(person)), alt: person?.display_name || "用户头像", width: "40", height: "40", decoding: "async" }),
+  );
 }
 
 export function cardFaces(card, members, limit = 3) {

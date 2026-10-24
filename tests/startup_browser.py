@@ -146,6 +146,41 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         await self.page.go_back()
         await self.page.get_by_role('heading', name='项目', exact=True).wait_for()
         self.assertFalse(self.errors)
+    async def test_avatar_categories_save_and_responsive_layout(self):
+        saved = {**DATA['user'], 'avatar_id': 'male-1'}
+        await self.page.route('**/api/bootstrap', lambda r: r.fulfill(json={**DATA, 'user': saved}))
+        async def profile(route):
+            saved.update(route.request.post_data_json)
+            await route.fulfill(json=saved)
+        await self.page.route('**/api/auth/me', profile)
+        await self.page.set_viewport_size({'width': 1440, 'height': 900})
+        await self.page.goto(self.url + '/#/account')
+        await self.page.locator('[data-form=account]').wait_for()
+        await self.page.locator('input[name=display_name]').fill('我的新名字')
+        for category in ('男生', '女生', '宠物', '机器人'):
+            await self.page.get_by_role('button', name=category, exact=True).click()
+            await expect(self.page.locator('.avatar-choice')).to_have_count(6)
+            for image in await self.page.locator('.avatar-choice img').all():
+                await image.evaluate('(img) => img.decode()')
+        await self.page.get_by_role('button', name='奶油弹簧', exact=True).click()
+        await self.page.get_by_role('button', name='宠物', exact=True).click()
+        await expect(self.page.locator('input[name=avatar_id]')).to_have_value('robot-6')
+        await expect(self.page.locator('input[name=display_name]')).to_have_value('我的新名字')
+        await self.page.get_by_role('button', name='保存', exact=True).click()
+        await expect(self.page.locator('.account-id img')).to_have_attribute('src', '/static/avatars/robot-6.webp?v=1')
+        self.assertEqual(saved['avatar_id'], 'robot-6')
+        for width in (1920, 1024, 901, 768, 701, 700, 390, 320):
+            await self.page.set_viewport_size({'width': width, 'height': 900})
+            self.assertTrue(await self.page.evaluate('document.documentElement.scrollWidth <= innerWidth'))
+            self.assertTrue(await self.page.evaluate('Array.from(document.querySelectorAll(".account-page *")).every(node => node.getBoundingClientRect().right <= innerWidth + 1)'))
+        await self.page.reload()
+        await expect(self.page.locator('input[name=avatar_id]')).to_have_value('robot-6')
+        await self.page.get_by_role('button', name='宠物', exact=True).click()
+        await self.page.get_by_role('button', name='橘猫', exact=True).click()
+        await self.page.get_by_role('button', name='保存', exact=True).click()
+        await expect(self.page.locator('.account-id img')).to_have_attribute('src', '/static/avatars/pet-1.webp?v=1')
+        self.assertFalse(self.errors)
+
     async def test_notification_badges_disappear_after_reading(self):
         notes = [
             {"id": i, "type": "project_created", "status": None, "read": False,

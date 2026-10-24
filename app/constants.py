@@ -12,6 +12,7 @@ COLORS = (
     "#2F6F6A",
     "#8A4B5A",
 )
+AVATAR_IDS = tuple(f"{group}-{index}" for group in ("male", "female", "pet", "robot") for index in range(1, 7))
 DEFAULT_COLUMNS = ("待办", "进行中", "已完成")
 DEFAULT_LABELS = (
     ("重要", "#D63A56"),

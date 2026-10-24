@@ -57,6 +57,13 @@ async def protect(request: Request, call_next):
     response = await call_next(request)
     if request.url.path.startswith("/static/"):
         response.headers["Cache-Control"] = "no-cache"
+        if (
+            request.url.path.startswith("/static/avatars/")
+            and request.url.path.endswith(".webp")
+            and request.query_params.get("v", "").isdigit()
+            and response.status_code in {200, 304}
+        ):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "same-origin"

@@ -5,7 +5,7 @@ from datetime import date
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.constants import ASSIGNABLE_ROLES, COLORS, PRIORITIES
+from app.constants import ASSIGNABLE_ROLES, AVATAR_IDS, COLORS, PRIORITIES
 
 EMAIL_RE = re.compile(r"[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}")
 NAME_RE = re.compile(r"^[^\x00-\x1f]{1,32}$")
@@ -77,6 +77,14 @@ class LoginIn(BaseModel):
 class ProfileIn(BaseModel):
     display_name: str | None = None
     avatar_color: str | None = None
+    avatar_id: str | None = None
+
+    @field_validator("avatar_id")
+    @classmethod
+    def _avatar(cls, value: str | None) -> str:
+        if value not in AVATAR_IDS:
+            raise ValueError("请选择预设头像")
+        return value
 
     @field_validator("display_name")
     @classmethod

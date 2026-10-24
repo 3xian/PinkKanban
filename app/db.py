@@ -98,6 +98,13 @@ def upgrade_schema(engine=None) -> None:
     engine = engine or get_engine()
     if engine.dialect.name != "mysql":
         return
+    if not _schema_has(
+        engine,
+        "SELECT 1 FROM information_schema.COLUMNS "
+        "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table AND COLUMN_NAME = :column",
+        {"table": "users", "column": "avatar_id"},
+    ):
+        _alter(engine, "ALTER TABLE `users` ADD COLUMN `avatar_id` VARCHAR(16) NULL")
     _ensure_card_responsible(engine)
     if _schema_has(
         engine,
