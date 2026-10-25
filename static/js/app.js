@@ -12,6 +12,7 @@ import { createColumnScrollCues } from "./column-scroll.js";
 import { createActivityLayout } from "./activity-layout.js";
 import { createBoardScrollbar } from "./board-scrollbar.js";
 import { cardCreateFields } from "./card-create.js";
+import { COVER_THEMES, coverTheme } from "./covers.js";
 
 window.kanbanGestures = Object.freeze({ canPullRefreshAt });
 
@@ -815,6 +816,7 @@ function metaBit(name, text, extra = "") {
 
 function cardNode(card, column) {
   const due = dueInfo(card.due_on);
+  const cover = coverTheme(card.cover_color);
   const accent = /^#[0-9A-Fa-f]{6}$/.test(card.cover_color || "") ? card.cover_color : (PRIORITY_ACCENT[card.priority] || "");
   const node = el("article", {
     class: `card${card.done ? " is-done" : ""}${card.archived ? " is-archived" : ""}${accent ? " has-mark" : ""}`,
@@ -824,8 +826,15 @@ function cardNode(card, column) {
   });
   if (accent) node.style.setProperty("--c", accent);
   node.style.setProperty("--card-accent", accent || CARD_PALETTE[card.id % CARD_PALETTE.length]);
+  if (cover) {
+    node.classList.add("has-cover-theme");
+    node.style.setProperty("--cover-bg", cover.background);
+    node.style.setProperty("--card-ink", cover.text);
+    node.style.setProperty("--card-accent", cover.accent);
+  }
   const labels = state.board.labels.filter((label) => card.label_ids.includes(label.id));
   const head = el("div", { class: "card-head" }, el("h3", { class: "card-title", text: card.title }));
+  if (cover) head.prepend(coverSymbol(cover, "card-cover-icon"));
   if (card.priority && card.priority !== "none") head.append(el("span", { class: `prio-mark prio-${card.priority}`, text: priorityLabel(card.priority) }));
   if (labels.length) node.append(el("div", { class: "pills card-labels" }, ...labels.map((label) => {
     const pill = el("span", { class: "pill", text: `#${label.name}` });
@@ -932,7 +941,15 @@ function activityRow(item) {
 
 function projectActivityPanel() {
   return el("details", { class: "project-activity", "aria-label": "项目动态", open: state.activityPanelOpen },
-    el("summary", { class: "project-activity-head" }, el("strong", { text: "项目动态" }), el("span", { class: "muted", text: "最近 80 条" })),
+    el("summary", { class: "project-activity-head" },
+      el("strong", { text: "项目动态" }),
+      el("span", { class: "muted project-activity-count", text: "最近 80 条" }),
+      el("span", { class: "project-activity-toggle" },
+        el("span", { class: "activity-expand", text: "展开" }),
+        el("span", { class: "activity-collapse", text: "收起" }),
+        glyph("chevron-down"),
+      ),
+    ),
     el("div", { class: "project-activity-feed" },
       state.activityStatus === "loading" ? el("p", { class: "muted", text: "正在加载动态…" }) : null,
       state.activityStatus === "error" ? el("button", { class: "btn-ghost", "data-act": "refresh-activity", text: "动态加载失败，点击重试" }) : null,
@@ -1034,6 +1051,30 @@ function colorPicker(selected) {
   }));
 }
 
+function coverSymbol(theme, className = "") {
+  return el("span", {
+    class: `cover-symbol ${className}`.trim(),
+    role: "img", "aria-label": theme.name, title: theme.name,
+    style: `--cover-icon:url('/static/icons/covers/${theme.icon}.svg');color:${theme.ink}`,
+  });
+}
+
+function coverPicker(card, edit) {
+  return el("div", { class: "cover-picker", role: "group", "aria-label": "任务封面" },
+    el("button", {
+      type: "button", class: card.cover_color ? "cover-option cover-none" : "cover-option cover-none is-on",
+      "data-act": "cover", "data-color": "", "aria-pressed": String(!card.cover_color), disabled: !edit,
+    }, glyph("close"), el("span", { text: "无封面" })),
+    ...COVER_THEMES.map((theme) => el("button", {
+      type: "button", class: coverTheme(card.cover_color) === theme ? "cover-option is-on" : "cover-option",
+      "data-act": "cover", "data-color": theme.value,
+      "aria-label": theme.name,
+      "aria-pressed": String(coverTheme(card.cover_color) === theme), disabled: !edit,
+      style: `--cover-bg:${theme.background};--cover-selected:${theme.selected};--cover-border:${theme.border};--cover-ink:${theme.ink}`,
+    }, coverSymbol(theme), el("span", { text: theme.name }), el("span", { class: "cover-check", "aria-hidden": "true" }, glyph("check")))),
+  );
+}
+
 function paintDrawer() {
   const data = state.detail;
   if (!data) {
@@ -1104,21 +1145,16 @@ function paintDrawer() {
                 return el("button", { type: "button", class: on ? "assignee is-on" : "assignee", "data-act": "toggle-assignee", "data-id": person.id, disabled: !edit }, avatar(person), person.display_name);
               })),
             ),
-            el("div", { class: "prop" },
+            el("div", { class: "prop prop-top" },
               el("span", { class: "prop-k", text: "封面" }),
-              el("div", { class: "swatches" }, el("button", { type: "button", class: card.cover_color ? "swatch" : "swatch is-on", "data-act": "cover", "data-color": "", text: "无", disabled: !edit }), ...COLORS.map((color) => {
-                const button = el("button", { type: "button", class: card.cover_color === color ? "swatch is-on" : "swatch", "data-act": "cover", "data-color": color, disabled: !edit, "aria-label": color });
-                button.style.background = color;
-                return button;
-              })),
+              coverPicker(card, edit),
             ),
           ),
-          el("div", { class: "section" }, el("h3", { text: "标签" }), el("div", { class: "pills" }, ...labels.map((label) => {
+          el("div", { class: "section label-section" }, el("h3", { text: "标签" }), el("div", { class: "pills", role: "group", "aria-label": "任务标签" }, ...labels.map((label) => {
             const on = card.label_ids.includes(label.id);
-            const button = el("button", { type: "button", class: on ? "pill is-on" : "pill", "data-act": "toggle-label", "data-id": label.id, disabled: !edit, text: label.name });
-            button.style.setProperty("--c", safeColor(label.color));
+            const button = el("button", { type: "button", class: on ? "pill is-on" : "pill", "data-act": "toggle-label", "data-id": label.id, "aria-pressed": String(on), disabled: !edit }, el("span", { class: "label-mark", "aria-hidden": "true" }, glyph("check")), el("span", { class: "label-name", text: label.name }));
             return button;
-          })), edit ? el("form", { "data-form": "label", class: "composer" }, el("input", { name: "name", placeholder: "新标签", required: true }), el("button", { class: "btn-tiny", text: "添加" })) : null),
+          })), !labels.length ? el("p", { class: "muted label-empty", text: "暂无标签" }) : null, edit ? el("form", { "data-form": "label", class: "composer label-composer" }, el("input", { name: "name", placeholder: "输入新标签名称", "aria-label": "新标签名称", maxlength: "24", required: true }), el("button", { type: "submit", class: "btn-tiny", text: "添加" })) : null),
           el("div", { class: "section" }, el("h3", { text: "动态" }), activityList(data.activity)),
           edit ? el("div", { class: "more-actions" },
             el("button", { class: "btn-ghost", "data-act": "duplicate", text: "复制" }),

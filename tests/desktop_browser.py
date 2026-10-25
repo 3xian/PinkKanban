@@ -374,6 +374,34 @@ class DesktopTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(await self.page.locator('.drawer-panel').is_visible())
         self.assertFalse(self.errors)
 
+    async def test_cover_themes_save_render_and_clear(self):
+        await self.visit('board/1', '.card')
+        await self.page.locator('.card').first.click()
+        picker = self.page.get_by_role('group', name='任务封面')
+        await picker.wait_for()
+        self.assertEqual(await picker.locator('button').count(), 9)
+        detail = card_detail({**CARDS[0]})
+        saves = []
+        async def save(route):
+            body = route.request.post_data_json
+            saves.append(body)
+            detail['card'].update(body)
+            await route.fulfill(json=detail)
+        await self.page.route('**/api/cards/1', save)
+        for name, color in [('开发', '#3D6B8A'), ('数据', '#2F6F6A')]:
+            await picker.get_by_role('button', name=name, exact=True).click()
+            await self.page.wait_for_function(
+                '(color) => document.querySelector(`.cover-option[data-color="${color}"]`).getAttribute("aria-pressed") === "true"',
+                arg=color,
+            )
+            badge = self.page.locator('.card[data-id="1"] .card-cover-icon')
+            self.assertEqual(await badge.get_attribute('aria-label'), name)
+            self.assertIn('/static/icons/covers/', await badge.evaluate('n => getComputedStyle(n).maskImage'))
+        await picker.get_by_role('button', name='无封面', exact=True).click()
+        await self.page.wait_for_function('!document.querySelector(".card[data-id=\\"1\\"] .card-cover-icon")')
+        self.assertEqual(saves, [{'cover_color': '#3D6B8A'}, {'cover_color': '#2F6F6A'}, {'cover_color': None}])
+        self.assertFalse(self.errors)
+
     async def test_create_task_form_submits_details_and_keeps_failed_draft(self):
         await self.visit('board/1', '.column')
         await self.page.locator('.column').nth(1).locator('.column-add').click()
