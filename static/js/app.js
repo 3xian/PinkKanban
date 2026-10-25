@@ -684,15 +684,13 @@ function projectCard(project) {
 function boardView() {
   if (!state.board) return emptyState("选择一个项目");
   const project = state.board.project;
-  const today = new Date();
   const firstColumn = state.board.columns[0];
   return el("section", { class: "board-page" },
     el("div", { class: "board-head", style: `--project-color: ${safeColor(project.color)}` },
-      el("div", { class: "board-heading" }, projectMark(project), el("div", { class: "board-title" }, el("h2", { text: project.name }), el("p", { class: "muted", text: project.description || "把卡片拖到它该在的位置。" }))),
-      el("div", { class: "board-date" }, el("span", { text: today.toLocaleDateString("zh-CN", { month: "long", day: "numeric", weekday: "long" }) })),
+      el("div", { class: "board-heading" }, projectMark(project), el("div", { class: "board-title" }, el("h2", { text: project.name, title: project.name }), project.description ? el("p", { class: "muted", text: project.description, title: project.description }) : null)),
       el("div", { class: "board-people" },
         el("div", { class: "faces" }, ...state.board.members.slice(0, 5).map((person) => avatar(person))),
-        el("button", { class: "btn-ghost", "data-act": "open-settings", "data-id": project.id }, glyph("user"), el("span", { text: "成员" })),
+        el("button", { class: "btn-ghost", "data-act": "open-settings", "data-id": project.id }, glyph("settings"), el("span", { text: "项目设置" })),
         editable() && firstColumn && !state.filters.archived ? el("button", { class: "btn-primary", "data-act": "compose", "data-column": firstColumn.id }, glyph("plus"), el("span", { text: "创建任务" })) : null,
       ),
     ),
