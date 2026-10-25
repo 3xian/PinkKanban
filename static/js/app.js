@@ -28,6 +28,7 @@ const state = {
   projectActivity: [],
   activityStatus: "loading",
   activityExpanded: new Set(),
+  activityPanelOpen: true,
   cardId: null,
   detail: null,
   tasks: [],
@@ -298,6 +299,10 @@ async function refreshProjectActivity() {
 }
 
 document.addEventListener("toggle", (event) => {
+  if (event.target.matches?.(".project-activity") && event.target.isConnected) {
+    state.activityPanelOpen = event.target.open;
+    return;
+  }
   const group = event.target.closest?.(".activity-group");
   if (!group) return;
   const id = Number(group.dataset.activityGroup);
@@ -915,8 +920,8 @@ function activityRow(item) {
 }
 
 function projectActivityPanel() {
-  return el("aside", { class: "project-activity", "aria-label": "项目动态" },
-    el("header", { class: "project-activity-head" }, el("h3", { text: "项目动态" }), el("span", { class: "muted", text: "最近 80 条" })),
+  return el("details", { class: "project-activity", "aria-label": "项目动态", open: state.activityPanelOpen },
+    el("summary", { class: "project-activity-head" }, el("strong", { text: "项目动态" }), el("span", { class: "muted", text: "最近 80 条" })),
     el("div", { class: "project-activity-feed" },
       state.activityStatus === "loading" ? el("p", { class: "muted", text: "正在加载动态…" }) : null,
       state.activityStatus === "error" ? el("button", { class: "btn-ghost", "data-act": "refresh-activity", text: "动态加载失败，点击重试" }) : null,
