@@ -199,7 +199,7 @@ body:not(.is-auth) .floating-menu { display: none; }
 .page-actions, .row { display: flex; align-items: center; gap: 8px; }
 .board-page { min-width: 0; }
 .board-workspace { min-width: 0; min-height: 0; }
-.project-activity { position: fixed; right: 24px; bottom: 32px; z-index: 14; width: min(320px, calc(100vw - 32px)); background: linear-gradient(145deg, #f1eaf566, #eee8f352); border: 1px solid #ffffffb3; border-radius: 20px; box-shadow: 0 16px 48px #49335f26, 0 3px 12px #49335f14, inset 0 1px 0 #ffffff80; backdrop-filter: blur(12px) saturate(135%); -webkit-backdrop-filter: blur(12px) saturate(135%); }
+.project-activity { position: fixed; right: 24px; bottom: 32px; z-index: 14; width: min(320px, calc(100vw - 32px)); background: linear-gradient(145deg, color-mix(in srgb, var(--violet) 20%, transparent) 0%, #f1eaf552 48%, color-mix(in srgb, var(--rose) 18%, transparent) 100%); border: 1px solid #ffffffb3; border-radius: 20px; box-shadow: 0 16px 48px #49335f26, 0 3px 12px #49335f14, inset 0 1px 0 #ffffff80; backdrop-filter: blur(12px) saturate(135%); -webkit-backdrop-filter: blur(12px) saturate(135%); }
 .project-activity:not([open]) { width: auto; }
 .project-activity[open] { top: var(--activity-top, 140px); bottom: auto; height: var(--activity-height, calc(100dvh - 172px)); }
 .project-activity-head { display: flex; height: 52px; align-items: center; gap: 12px; padding: 16px; cursor: pointer; list-style: none; border-radius: inherit; }
@@ -277,6 +277,7 @@ body:not(.is-auth) .floating-menu { display: none; }
 
 /* Rounded columns and softly tinted cards echo the reference boards. */
 .board-canvas { display: flex; gap: 16px; overflow-x: auto; padding: 1px var(--board-edge, 24px) 16px 1px; scroll-snap-type: x proximity; min-height: 0; align-items: flex-start; overscroll-behavior-x: contain; scrollbar-width: thin; scrollbar-color: #cdc4d4 transparent; }
+.board-canvas.has-activity-space::after { content: ""; flex: 0 0 var(--activity-reserve, 0px); height: 1px; scroll-snap-align: end; scroll-margin-right: var(--board-edge, 24px); }
 .board-canvas.is-sorting { scroll-snap-type: none; }
 .column { width: clamp(260px, calc((100vw - var(--side) - 100px) / 4), 400px); flex: none; scroll-snap-align: start; display: flex; flex-direction: column; min-height: 180px; padding: 10px 8px 8px; border-radius: 21px; background: #fcfbfa; border: 1px solid #e9e5e1; }
 .column.is-drop { border-color: #ab88d9; box-shadow: inset 0 0 0 1px #c9b1e7; }
