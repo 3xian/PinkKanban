@@ -296,12 +296,14 @@ class DesktopTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await panel.locator('.activity-group').first.evaluate('node => node.open'))
         board = await self.page.locator('.board-canvas').bounding_box()
         activity = await panel.bounding_box()
-        self.assertGreater(activity['x'], board['x'] + board['width'])
+        self.assertLess(activity['x'], board['x'] + board['width'])
+        self.assertGreaterEqual(activity['x'], board['x'])
         for width in (901, 1024, 1200, 1440, 1920):
             await self.page.set_viewport_size({'width': width, 'height': 900})
             board = await self.page.locator('.board-canvas').bounding_box()
             activity = await panel.bounding_box()
-            self.assertGreater(activity['x'], board['x'] + board['width'])
+            self.assertLessEqual(activity['x'] + activity['width'], board['x'] + board['width'])
+            self.assertGreaterEqual(activity['x'], board['x'])
             self.assertAlmostEqual(activity['y'], board['y'], delta=2)
             self.assertLessEqual((await self.page.locator('.board-head').bounding_box())['height'], 64)
             self.assertTrue(await self.page.evaluate('document.documentElement.scrollWidth <= innerWidth'))
@@ -374,7 +376,7 @@ class DesktopTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_create_task_form_submits_details_and_keeps_failed_draft(self):
         await self.visit('board/1', '.column')
-        await self.page.locator('.column').nth(1).locator('.add-card').click()
+        await self.page.locator('.column').nth(1).locator('.column-add').click()
         form = self.page.locator('[data-form=card]')
         self.assertEqual(await form.locator('[name=column_id]').input_value(), '2')
         await form.locator('[name=title]').fill('完成首页设计')
@@ -397,7 +399,9 @@ class DesktopTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sent[-1], dict(column_id=2, title='完成首页设计', description='需要完成移动端验收', responsible_user_id=2, due_on='2026-12-01'))
         for width in (320, 390, 1440):
             await self.page.set_viewport_size({'width': width, 'height': 640})
-            await self.page.locator('.add-card').first.click()
+            if await self.page.locator('.project-activity').get_attribute('open') is not None:
+                await self.page.locator('.project-activity > summary').click()
+            await self.page.locator('.column-add').first.click()
             await form.locator('[type=submit]').scroll_into_view_if_needed()
             bounds = await form.bounding_box()
             self.assertGreaterEqual(bounds['x'], 0)
@@ -440,10 +444,58 @@ class DesktopTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(await self.page.evaluate('document.documentElement.scrollWidth <= innerWidth'))
         self.assertFalse(self.errors)
 
+    async def test_board_scrollbar_drag_keyboard_and_resize(self):
+        await self.page.set_viewport_size({'width': 1440, 'height': 900})
+        await self.visit('board/1', '.board-scrollbar-thumb')
+        self.assertEqual(await self.page.locator('.add-card').count(), 0)
+        canvas = self.page.locator('.board-canvas')
+        bar = self.page.locator('.board-scrollbar')
+        thumb = self.page.locator('.board-scrollbar-thumb')
+        self.assertEqual(await canvas.evaluate('n => getComputedStyle(n).scrollbarWidth'), 'none')
+        bounds = await bar.bounding_box()
+        self.assertAlmostEqual(bounds['y'] + bounds['height'], 900, delta=1)
+        await thumb.focus()
+        await self.page.keyboard.press('End')
+        await self.page.wait_for_function('document.querySelector(".board-scrollbar-thumb").getAttribute("aria-valuenow") === "100"')
+        await self.page.keyboard.press('Home')
+        await self.page.wait_for_function('document.querySelector(".board-canvas").scrollLeft <= 1')
+        await self.page.keyboard.press('ArrowRight')
+        self.assertGreater(await canvas.evaluate('n => n.scrollLeft'), 1)
+        await self.page.keyboard.press('Home')
+        box = await thumb.bounding_box()
+        await self.page.mouse.move(box['x'] + box['width'] / 2, box['y'] + 4)
+        await self.page.mouse.down()
+        await self.page.mouse.move(box['x'] + box['width'] / 2 + 150, box['y'] + 4, steps=8)
+        self.assertGreater(await canvas.evaluate('n => n.scrollLeft'), 0)
+        await self.page.mouse.up()
+        for width in (390, 1920):
+            await self.page.set_viewport_size({'width': width, 'height': 800})
+            await self.page.wait_for_function('Math.abs(document.querySelector(".board-scrollbar").getBoundingClientRect().right - document.querySelector(".board-canvas").getBoundingClientRect().right) < 1')
+            bounds = await bar.bounding_box()
+            if width <= 900:
+                navigation = await self.page.locator('.tabbar').bounding_box()
+                self.assertAlmostEqual(bounds['y'] + bounds['height'], navigation['y'], delta=1)
+                track = self.page.locator('.board-scrollbar-track')
+                self.assertTrue(await track.evaluate('''node => {
+                    const r = node.getBoundingClientRect();
+                    return node.contains(document.elementFromPoint(r.x + r.width - 2, r.y + r.height / 2));
+                }'''))
+                await thumb.focus()
+                await self.page.keyboard.press('Home')
+                track_box = await track.bounding_box()
+                await self.page.mouse.click(track_box['x'] + track_box['width'] - 2, track_box['y'] + track_box['height'] / 2)
+                self.assertGreater(await canvas.evaluate('n => n.scrollLeft'), 0)
+                self.assertTrue(self.page.url.endswith('#/board/1'))
+            else:
+                self.assertAlmostEqual(bounds['y'] + bounds['height'], 800, delta=1)
+        self.assertFalse(self.errors)
+
     async def test_drawer_keeps_all_work_sections_accessible_on_narrow_screens(self):
         for width in (320, 390, 768, 901):
             await self.page.set_viewport_size({'width': width, 'height': 900})
             await self.visit('board/1', '.card')
+            if await self.page.locator('.project-activity').evaluate('node => node.open'):
+                await self.page.locator('.project-activity > summary').click()
             await self.page.locator('.card').first.click()
             await self.page.locator('.drawer-title').wait_for()
             panel = self.page.locator('.drawer-panel')

@@ -10,6 +10,7 @@ import { createBoardSync } from "./board-sync.js";
 import { groupActivity } from "./activity.js";
 import { createColumnScrollCues } from "./column-scroll.js";
 import { createActivityLayout } from "./activity-layout.js";
+import { createBoardScrollbar } from "./board-scrollbar.js";
 import { cardCreateFields } from "./card-create.js";
 
 window.kanbanGestures = Object.freeze({ canPullRefreshAt });
@@ -47,6 +48,7 @@ const state = {
 const app = document.getElementById("app");
 const refreshColumnScrollCues = createColumnScrollCues(app);
 const refreshActivityLayout = createActivityLayout(app);
+const refreshBoardScrollbar = createBoardScrollbar(app);
 const drawer = document.getElementById("drawer");
 const modal = document.getElementById("modal");
 const toasts = document.getElementById("toasts");
@@ -368,6 +370,7 @@ function render() {
   app.replaceChildren(authed ? shell() : authView());
   refreshColumnScrollCues();
   refreshActivityLayout();
+  refreshBoardScrollbar();
   if (!authed) startAuthMotion(app.querySelector(".auth"));
   paintBadges();
   if (state.cardId) paintDrawer();
@@ -715,6 +718,11 @@ function boardView() {
       el("span", { class: "filter-note", "data-filter-lock": "1", hidden: !filtersOn() }, glyph("info"), "筛选开启时暂停拖拽"),
     ),
     el("div", { class: "board-workspace" }, canvasNode(), projectActivityPanel()),
+    el("div", { class: "board-scrollbar", hidden: true },
+      el("div", { class: "board-scrollbar-track" },
+        el("div", { class: "board-scrollbar-thumb", role: "scrollbar", tabindex: "0", "aria-label": "横向滚动看板", "aria-controls": "board-canvas", "aria-orientation": "horizontal", "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": "0" }),
+      ),
+    ),
   );
 }
 
@@ -769,6 +777,7 @@ function paintCanvas() {
   updateBoardDOM(page, boardView());
   refreshColumnScrollCues();
   refreshActivityLayout();
+  refreshBoardScrollbar();
 }
 
 function columnNode(column) {
@@ -785,14 +794,11 @@ function columnNode(column) {
     el("span", { class: over ? "wip is-over" : "count", text: column.wip_limit ? `${live.length} / ${column.wip_limit}` : String(live.length) }),
     el("span", { class: "spacer" }),
     editable() ? el("button", { class: "icon-btn icon-btn-sm", "data-act": "edit-column", "data-id": column.id, "aria-label": "列表设置" }, glyph("settings")) : null,
-    editable() && !state.filters.archived ? el("button", { class: "icon-btn icon-btn-sm", "data-act": "compose", "data-column": column.id, "aria-label": `在${column.name}添加卡片` }, glyph("plus")) : null,
+    editable() && !state.filters.archived ? el("button", { class: "icon-btn column-add", "data-act": "compose", "data-column": column.id, title: `在${column.name}添加任务`, "aria-label": `在${column.name}添加任务` }, glyph("plus")) : null,
   );
   const body = el("div", { class: "column-cards" });
   for (const card of cards) body.append(cardNode(card, column));
   node.append(head, el("div", { class: "column-scroll" }, body));
-  if (editable() && !state.filters.archived) {
-    node.append(el("button", { class: "add-card", "data-act": "compose", "data-column": column.id }, glyph("plus"), el("span", { text: "添加任务" })));
-  }
   return node;
 }
 
