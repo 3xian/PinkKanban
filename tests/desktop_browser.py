@@ -235,10 +235,51 @@ class DesktopTests(unittest.IsolatedAsyncioTestCase):
         await self.visit('notifications', '.notes-page')
         note = self.page.locator('.note').first
         position = await note.bounding_box()
-        await note.locator('header').click()
+        await note.locator('.note-content').click()
         await self.page.wait_for_function('document.querySelector("[data-unread-count]").textContent === "2 条未读"')
         self.assertNotIn('is-unread', await note.get_attribute('class'))
         self.assertEqual((await note.bounding_box())['y'], position['y'])
+        self.assertFalse(self.errors)
+
+    async def test_notifications_open_card_project_and_keep_invite_actions_separate(self):
+        notes = [
+            {**NOTES[1], 'id': 2, 'project_id': 1, 'card_id': 1},
+            {**NOTES[3], 'id': 4, 'project_id': 1, 'card_id': 1},
+            {**NOTES[4], 'id': 5, 'project_id': 2, 'card_id': None},
+            {**NOTES[0], 'project_id': 2, 'card_id': None},
+        ]
+        await self.page.route('**/api/notifications', lambda route: route.fulfill(json={'items': notes, 'unread': 2}))
+        reads = []
+        async def read(route):
+            reads.append(route.request.url)
+            await route.fulfill(json={'ok': True})
+        await self.page.route('**/api/notifications/*/read', read)
+        for index in (0, 1):
+            await self.visit('notifications', '.note')
+            button = self.page.locator('.note-content').nth(index)
+            await button.focus()
+            await button.press('Enter')
+            await self.page.locator('.drawer-title').wait_for()
+            self.assertTrue(self.page.url.endswith('#/board/1'))
+            self.assertEqual(await self.page.locator('.drawer-title').input_value(), CARDS[0]['title'])
+        self.assertEqual(len(reads), 1)
+        await self.visit('notifications', '.note')
+        await self.page.locator('.note-content').nth(2).click()
+        await self.page.locator('.board-page').wait_for()
+        self.assertTrue(self.page.url.endswith('#/board/2'))
+        await self.visit('notifications', '.note')
+        await self.page.locator('.note-content').last.click()
+        await self.page.get_by_text('请先接受邀请，再进入项目', exact=True).wait_for()
+        self.assertTrue(self.page.url.endswith('#/notifications'))
+        accepted = []
+        async def accept(route):
+            accepted.append(route.request.url)
+            await route.fulfill(json={'ok': True, 'project_id': 2})
+        await self.page.route('**/api/notifications/1/accept', accept)
+        await self.page.locator('[data-act=accept]').click()
+        await self.page.get_by_text('已加入项目', exact=True).wait_for()
+        self.assertEqual(len(accepted), 1)
+        self.assertEqual(len(reads), 2)
         self.assertFalse(self.errors)
 
     async def test_project_activity_groups_keep_comments_separate_and_expansion_on_filter(self):
@@ -329,6 +370,60 @@ class DesktopTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any('title' in body for body in saves))
         await self.page.keyboard.press('Escape')
         self.assertFalse(await self.page.locator('.drawer-panel').is_visible())
+        self.assertFalse(self.errors)
+
+    async def test_create_task_form_submits_details_and_keeps_failed_draft(self):
+        await self.visit('board/1', '.column')
+        await self.page.locator('.column').nth(1).locator('.add-card').click()
+        form = self.page.locator('[data-form=card]')
+        self.assertEqual(await form.locator('[name=column_id]').input_value(), '2')
+        await form.locator('[name=title]').fill('完成首页设计')
+        await form.locator('[name=description]').fill('需要完成移动端验收')
+        await form.locator('[name=responsible_user_id]').select_option('2')
+        await form.locator('[name=due_on]').fill('2026-12-01')
+        sent = []
+        async def create(route):
+            sent.append(route.request.post_data_json)
+            if len(sent) == 1:
+                await route.fulfill(status=400, json={'detail': '请重试'})
+            else:
+                await route.fulfill(json={'id': 100})
+        await self.page.route('**/api/projects/1/cards', create)
+        await form.locator('[type=submit]').click()
+        await self.page.get_by_text('请重试', exact=True).wait_for()
+        self.assertEqual(await form.locator('[name=description]').input_value(), '需要完成移动端验收')
+        await form.locator('[type=submit]').click()
+        await form.wait_for(state='hidden')
+        self.assertEqual(sent[-1], dict(column_id=2, title='完成首页设计', description='需要完成移动端验收', responsible_user_id=2, due_on='2026-12-01'))
+        for width in (320, 390, 1440):
+            await self.page.set_viewport_size({'width': width, 'height': 640})
+            await self.page.locator('.add-card').first.click()
+            await form.locator('[type=submit]').scroll_into_view_if_needed()
+            bounds = await form.bounding_box()
+            self.assertGreaterEqual(bounds['x'], 0)
+            self.assertLessEqual(bounds['x'] + bounds['width'], width)
+            self.assertLessEqual(bounds['y'] + bounds['height'], 640)
+            await self.page.keyboard.press('Escape')
+        self.assertFalse(self.errors)
+
+    async def test_column_overflow_cue_tracks_scroll_filter_and_resize(self):
+        await self.page.set_viewport_size({'width': 1440, 'height': 600})
+        await self.visit('board/1', '.column-cards')
+        body = self.page.locator('.column-cards').first
+        cue = self.page.locator('.column-scroll').first
+        await self.page.wait_for_function('document.querySelector(".column-scroll").classList.contains("has-more")')
+        self.assertEqual(await body.evaluate('n => getComputedStyle(n).scrollbarWidth'), 'none')
+        self.assertEqual(await cue.evaluate('n => getComputedStyle(n, "::after").pointerEvents'), 'none')
+        await body.evaluate('n => n.scrollTop = n.scrollHeight')
+        await self.page.wait_for_function('!document.querySelector(".column-scroll").classList.contains("has-more")')
+        await body.evaluate('n => n.scrollTop = 0')
+        await self.page.wait_for_function('document.querySelector(".column-scroll").classList.contains("has-more")')
+        await self.page.set_viewport_size({'width': 1440, 'height': 1600})
+        await self.page.wait_for_function('!document.querySelector(".column-scroll").classList.contains("has-more")')
+        await self.page.set_viewport_size({'width': 1440, 'height': 600})
+        await self.page.wait_for_function('document.querySelector(".column-scroll").classList.contains("has-more")')
+        await self.page.locator('#board-search').fill('no-matching-card')
+        await self.page.wait_for_function('!document.querySelector(".column-scroll").classList.contains("has-more")')
         self.assertFalse(self.errors)
 
     async def test_board_columns_expand_without_losing_scroll_access(self):

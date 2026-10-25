@@ -55,6 +55,8 @@ jobs:
         run: node --test tests/*.test.mjs
       - name: Browser startup regressions
         run: python tests/startup_browser.py
+      - name: Desktop and responsive browser regressions
+        run: python tests/desktop_browser.py
       - name: Android QA server boundary regressions
         run: python -m unittest discover -s android/qa -p test_server.py
 

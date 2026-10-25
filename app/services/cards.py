@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import secrets
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from fastapi import HTTPException
@@ -67,7 +67,9 @@ def _card_count(db: Session, project_id: int) -> int:
     return int(db.scalar(select(func.count()).select_from(Card).where(Card.project_id == project_id)) or 0)
 
 
-def create_card(db: Session, project_id: int, user: User, column_id: int, title: str) -> Card:
+def create_card(db: Session, project_id: int, user: User, column_id: int, title: str, *,
+                description: str = "", due_on: date | None = None,
+                responsible_user_id: int | None = None) -> Card:
     project, _member = begin_write(db, project_id, user)
     column = db.get(BoardColumn, column_id)
     if column is None or column.project_id != project.id:
@@ -78,6 +80,8 @@ def create_card(db: Session, project_id: int, user: User, column_id: int, title:
         project_id=project.id,
         column_id=column.id,
         title=title,
+        description=description.replace("\r\n", "\n"),
+        due_on=due_on,
         position=len(_live_cards(db, column.id)),
         created_by=user.id,
     )
@@ -85,6 +89,8 @@ def create_card(db: Session, project_id: int, user: User, column_id: int, title:
     db.flush()
     _touch(project)
     _activity(db, project_id=project.id, user_id=user.id, action="card.created", card_id=card.id, detail={"title": title})
+    if responsible_user_id is not None:
+        _apply_responsible(db, card, project.id, user, responsible_user_id)
     return card
 
 

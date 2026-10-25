@@ -365,12 +365,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
     async def test_board_moves_reuse_nodes_and_metadata_updates_in_place(self):
         board = await self.mock_board()
         await self.open_mock_board()
-        await self.page.locator('[data-act="compose"]').first.click()
-        draft = self.page.locator('.composer input[name="title"]')
-        await draft.fill('尚未提交的草稿')
-        await draft.blur()
         await self.page.evaluate('''() => {
-            window.draftInput = document.querySelector('.composer input[name=title]');
             window.movingCard = document.querySelector('.card');
             window.unchangedColumn = document.querySelectorAll('.column')[2];
         }''')
@@ -380,12 +375,10 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         board['project']['name'] = '协作项目已改名'
         board['columns'][1]['name'] = '协作列表已改名'
         await self.board_event()
-        self.assertTrue(await self.page.evaluate('movingCard === document.querySelector(".column:nth-child(2) .card:last-child")'))
-        self.assertTrue(await self.page.evaluate('draftInput === document.querySelector(".composer input[name=title]")'))
-        self.assertTrue(await self.page.evaluate('unchangedColumn === document.querySelectorAll(".column")[2]'))
-        await expect(draft).to_have_value('尚未提交的草稿')
         await expect(self.page.locator('.board-heading h2')).to_have_text('协作项目已改名')
         await expect(self.page.locator('.column-head strong').nth(1)).to_have_text('协作列表已改名')
+        self.assertTrue(await self.page.evaluate('movingCard === document.querySelector(".column:nth-child(2) .card:last-child")'))
+        self.assertTrue(await self.page.evaluate('unchangedColumn === document.querySelectorAll(".column")[2]'))
         board['labels'] = [
             {'id': 1, 'name': '需求', 'color': '#D63A56'},
             {'id': 2, 'name': '缺陷', 'color': '#D63A56'},
@@ -401,34 +394,25 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         await expect(self.page.locator('.grip, .composer, .add-column')).to_have_count(0)
         self.assertFalse(self.errors)
 
-    async def test_deleted_draft_column_migrates_composer_for_local_and_remote_updates(self):
-        for local in (True, False):
-            with self.subTest(local=local):
-                board = await self.mock_board()
-                async def delete_column(route):
-                    removed = board['columns'].pop(1)
-                    for card in removed['cards']:
-                        card['column_id'] = board['columns'][0]['id']
-                        board['columns'][0]['cards'].append(card)
-                    await route.fulfill(json={'column_ids': [c['id'] for c in board['columns']]})
-                await self.page.route('**/api/columns/2', delete_column)
-                await self.open_mock_board()
-                await self.page.locator('.column:nth-child(2) [data-act=compose]').first.click()
-                draft = self.page.locator('.composer input[name=title]')
-                await draft.fill('删除列表后仍保留的草稿')
-                await draft.blur()
-                if local:
-                    await self.page.locator('.column:nth-child(2) [data-act=edit-column]').click()
-                    await self.page.locator('#modal [data-act=delete-column]').click()
-                    await expect(self.page.locator('.column')).to_have_count(5)
-                else:
-                    board['columns'].pop(1)
-                    await self.board_event()
-                await expect(draft).to_have_value('删除列表后仍保留的草稿')
-                await expect(self.page.locator('.composer input[name=column_id]')).to_have_value('1')
-                await self.board_event()
-                await expect(draft).to_have_value('删除列表后仍保留的草稿')
-                await self.page.unroute('**/api/columns/2', delete_column)
+    async def test_creation_modal_preserves_draft_and_defers_remote_column_updates(self):
+        board = await self.mock_board()
+        await self.open_mock_board()
+        await self.page.locator('.column:nth-child(2) [data-act=compose]').first.click()
+        draft = self.page.locator('[data-form=card] input[name=title]')
+        await draft.fill('尚未提交的任务')
+        await draft.blur()
+        board['columns'].pop(1)
+        await self.page.evaluate('boardStreams.at(-1).emit("change")')
+        await self.page.clock.run_for(1000)
+        await expect(draft).to_have_value('尚未提交的任务')
+        await expect(self.page.locator('[data-form=card] select[name=column_id]')).to_have_value('2')
+        await expect(self.page.locator('.column')).to_have_count(6)
+        await self.page.keyboard.press('Escape')
+        await self.page.clock.run_for(1000)
+        await expect(self.page.locator('.column')).to_have_count(5)
+        await self.page.locator('[data-act=compose]').first.click()
+        await expect(draft).to_have_value('')
+        await expect(self.page.locator('[data-form=card] select[name=column_id] option')).to_have_count(5)
         self.assertFalse(self.errors)
 
     async def test_deleted_selected_label_clears_filter_and_restores_cards(self):

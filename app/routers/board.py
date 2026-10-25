@@ -96,7 +96,7 @@ def order_columns(project_id: int, body: ReorderIn, user: User = Depends(current
 
 @router.post("/projects/{project_id}/cards")
 def add_card(project_id: int, body: CardIn, user: User = Depends(current_user), db: Session = Depends(get_db, scope="function")):
-    card = create_card(db, project_id, user, body.column_id, body.title)
+    card = create_card(db, project_id, user, **body.model_dump())
     return card_detail(db, card.id, user)["card"]
 
 

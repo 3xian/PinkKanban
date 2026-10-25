@@ -6,6 +6,8 @@
 
 **FastAPI + MariaDB · 原生 JavaScript，无前端构建步骤 · Web 与 Android 客户端 · MIT**
 
+本文描述当前源码；线上功能取决于实际部署版本。Android 原生功能与验收范围分别见[客户端说明](android/README.md)和[历史验收记录](android/qa/RESULTS.md)。
+
 [快速开始](#快速开始) · [功能与权限](#功能与权限) · [配置](#配置) · [部署与升级](#部署与升级) · [开发与测试](#开发与测试) · [API](#api)
 
 ## 功能与权限
@@ -13,7 +15,7 @@
 - **看板协作**：列表与卡片拖拽排序、WIP 提示、项目归档与恢复。
 - **实时同步**：通过 SSE 接收看板变化通知，局部更新卡片、列表与项目信息；保留滚动、阅读位置和草稿，输入、拖拽与文字选择期间延后同步，断线后自动恢复。
 - **任务跟进**：Markdown 描述、优先级、截止日期、主负责人、参与人、标签、清单、完成标记、归档与复制。
-- **集中沟通**：卡片评论、附件、项目与卡片活动记录；站内邀请和通知。
+- **集中沟通**：评论、附件预览、项目与卡片活动记录；通知可打开对应任务或项目，未接受的邀请需先处理。
 - **快速定位**：关键词、我的、延期、标签、优先级、完成状态与归档筛选；跨项目「我的任务」。
 - **移动端**：响应式网页、触屏长按拖拽；[Android 客户端](android/README.md)提供会话保持、系统返回导航、附件上传与保存、连接重试。
 
@@ -26,7 +28,7 @@
 | `owner` 拥有者 | 管理员的全部能力；移交拥有者、删除项目 | 不能修改自己的角色或被移除；退出前必须移交 |
 | `admin` 管理员 | 成员的全部能力；邀请与撤回邀请、调整角色、移除成员 | 删除他人的评论与附件需要此级权限 |
 | `member` 成员 | 管理列表、卡片、标签和清单；评论、上传附件 | 不能管理项目成员 |
-| `viewer` 只读 | 查看看板、卡片详情和活动流 | 写操作返回 403 |
+| `viewer` 只读 | 查看看板、卡片详情和活动流 | 不能修改项目内容；仍可处理自己的账号、通知或退出项目 |
 
 ### 使用边界
 
@@ -34,7 +36,7 @@
 - **WIP 是提醒，不是硬限制**：超出时突出显示列表计数，服务端不阻止移动。项目至少保留一个列表；删除列表时卡片并入相邻列表。
 - **筛选开启时禁用拖拽**，避免按可见子集计算排序。鼠标按住即拖，触屏长按 280ms 进入拖拽。
 - **卡片详情即时保存**：标题、描述与截止日期失焦保存，主负责人变更立即保存。任务卡展示描述摘要、标签、截止日期、评论和附件计数；有清单时显示真实完成比例与圆点进度。窄屏抽屉改为单列；卡片显示主负责人头像描边，详情不在参与人区域重复展示主负责人。
-- **新建任务保留单个草稿**：重复点击创建入口只聚焦当前输入；切换列表会将草稿转到目标列表。筛选重绘、开关侧栏不清空内容；创建成功或切换项目后清除。
+- **新建任务使用完整表单**：标题必填，描述、负责人和截止日期选填，所属列表可修改。一次请求保存全部字段；提交失败保留输入，取消或关闭表单丢弃草稿。清单、附件和评论在创建后补充。
 - **Android 是在线 WebView 客户端**，不是独立离线看板；不提供离线编辑或后台系统推送。构建、服务地址配置与验收见[客户端文档](android/README.md)。
 
 ## 快速开始
@@ -72,7 +74,7 @@ copy .env.example .env
 docker compose up -d --wait
 ```
 
-仓库使用 MariaDB 10.11，宿主端口为 **3307**，不占用 3306；数据保存在 Docker 命名卷 `kanban_db` 中。默认连接串已写入 `.env.example`。
+仓库使用 MariaDB 10.11，宿主端口为 **3307**，不占用 3306；数据保存在 Compose 的 `kanban_db` 命名卷中（实际卷名通常带项目名前缀）。默认连接串已写入 `.env.example`。
 
 ### 3. 启动 Web 服务
 
@@ -85,7 +87,7 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 Windows：
 
 ```bat
-run.bat
+cmd.exe /c run.bat
 ```
 
 `run.bat` 在缺少 `.venv\Scripts\python.exe` 时自动创建虚拟环境并安装依赖；已有环境更新依赖时，运行 `.venv\Scripts\python.exe -m pip install -r requirements.txt`。
@@ -136,9 +138,9 @@ curl http://127.0.0.1:8000/api/health
 - **配置发信服务**：SMTP 是注册流程的必要条件，不能以测试捕获模式代替。
 - **保持单 worker / 单实例假设**：接口限流与 SSE 看板通知订阅均保存在进程内存中，多 worker 或多副本不会共享；扩展前需接入共享限流存储与发布订阅通道。
 - **允许 SSE 长连接**：`/api/projects/{id}/events` 返回 `X-Accel-Buffering: no` 禁用 nginx 响应缓冲，每 15 秒发送心跳。其他代理也需关闭事件流缓冲并允许持续连接。前端连接正常时不定时读取看板；连接异常时每 15 秒读取作为降级，重连后获取最新快照补齐离线变化。
-- **持久化与备份**：数据库在 `kanban_db` 卷，附件在仓库 `uploads/`。两者都需备份；附件目录需可写，容器重建或多副本部署需持久化 / 共享存储。
+- **持久化与备份**：使用仓库 Compose 时数据库在命名卷中；使用独立 MariaDB 时由数据库部署管理。数据库与 `uploads/` 附件都需备份，附件目录需可写。同步代码时保留 `.env` 和 `uploads/`。
 
-启动会检查数据库，必要时尝试 `CREATE DATABASE`，再通过 `create_all` 创建缺失表。**`create_all` 不会修改已有表结构**；当前启动升级会为 `cards` 补充可空的 `responsible_user_id` 列、索引和外键，为 `users` 补充可空的 `avatar_id` 列，保留已有数据。数据库账号需有相应 DDL 权限；升级前备份，更新后重启后端。使用名为 `pinkkanban.service` 的 systemd 服务时，重启该服务。
+启动会检查数据库，必要时尝试 `CREATE DATABASE`，再通过 `create_all` 创建缺失表。**`create_all` 不会修改已有表结构**；当前启动升级会为 `cards` 补充可空的 `responsible_user_id` 列、索引和外键，为 `users` 补充可空的 `avatar_id` 列，并将 `access_tokens.expires_at` 升级为可空，保留已有数据。数据库账号需有相应 DDL 权限；升级前备份，更新后重启后端。使用名为 `pinkkanban.service` 的 systemd 服务时，重启该服务。
 
 ### 限额与附件
 
@@ -148,7 +150,7 @@ curl http://127.0.0.1:8000/api/health
 | 每项目列表 / 卡片 / 标签 | 40 / 4000 / 30 |
 | 每卡片清单 / 评论 | 20 / 1000 |
 | 每清单条目 | 100 |
-| 单个附件 | 8 MB |
+| 单个附件 | 8 MiB |
 
 附件扩展名白名单见 [`app/constants.py`](app/constants.py)。展示名与存储名分离，落盘名为随机 hex 加原扩展名；事务提交后才删除文件，回滚不删除。
 
@@ -167,17 +169,15 @@ curl http://127.0.0.1:8000/api/health
 | Android | [`android/`](android/README.md)，原生 Java + WebView |
 | 测试 / 数据库初始化 | [`tests/`](tests/) / [`deploy/initdb/`](deploy/initdb/) |
 
-前端为 hash 路由单页应用：项目、看板、我的任务、通知、设置、账号六个视图。界面采用铺满浏览器的浅色工作台、200px 宽的淡紫粉渐变侧栏、黑色主操作和自上而下轻微渐淡的彩色任务卡；任务卡背景饱和度统一为 64%，渐变明度为 89%–93%，保留原有色相及文字颜色。登录、注册、设置与弹层使用同一套视觉。桌面保留工作空间导航和顶部用户区，看板按标题与筛选区之外的剩余空间布局，长列表在列内滚动，横向滚动条保持在视口内；窄屏使用底部导航、侧滑项目菜单及看板内部横向滚动，长列表随页面滚动。侧栏开关不重建页面或重置滚动位置；Android 下拉刷新仅在主内容滚动到顶部且触点不属于交互控件或嵌套滚动区时允许开始。通知单条已读只减少该条未读计数，「全部已读」清除剩余未读；未读数归零时，右上角、侧栏及底部导航的通知徽标均完全隐藏，不保留空圆点。`Esc` 依次关闭弹层、抽屉、侧边栏。任务入口共用 `static/js/icons.js` 的任务清单 SVG 图标。
+### 界面与交互
 
-顶部欢迎栏采用单行紧凑布局，桌面高度为 52px；看板标题栏将日期、项目名称、简介与操作按钮同排，减少上下留白。项目名称优先占用宽度，简介仅使用剩余空间并以省略号截断，避免长简介挤压标题。窄屏将标题与简介上下排列，其他内容按可用宽度换行，保留通知、账号、成员和创建任务入口。
-
-任务卡默认轮换色板及「紧急」优先级的原粉色背景改用柔和橙色（基色 `#e59262`）；自定义封面色仍优先，其他界面配色不变。
-
-品牌标识是纯图形的双便签与星芒：紫色后卡、雾粉折角前卡和浅紫粉渐变底，不使用字母造型。Web 的导航标识与 favicon 共用 `static/favicon.svg`；Android 使用同构的 `drawable/ic_board.xml` 前景和 `drawable/ic_launcher_background.xml` 渐变背景，适配系统圆形、圆角矩形及单色主题图标。
-
-账户页在桌面端将资料与密码并排展示，凭证表单横向排列，700px 及以下改为单列。头像使用统一手绘涂鸦风格的 24 个预设，男生、女生、宠物、机器人各 6 个；选择器按分类切换，仅加载当前分类的 6 个头像，点击「保存」后生效，成员、卡片、评论与通知共用所选头像。未选择头像的老账号按用户 ID 稳定分配默认头像，不推断性别。头像文件位于 `static/avatars/`，采用 192×192 WebP，整套约 182 KB；带版本号的 URL 缓存一年，更换素材时同步增加 URL 版本号。分类与选择器分别由 `static/js/avatars.js` 和 `static/js/avatar-picker.js` 管理；接口仅接受白名单中的 `avatar_id`。
-
-账户页的 Agent 凭证区域由 `static/js/tokens.js` 独立管理 DOM 和请求生命周期，刷新列表不会重建资料、密码或凭证创建表单。创建、刷新与撤销串行执行；临时明文绑定凭证 ID，撤销其他凭证不会清除它。离开账户页或登出时销毁组件、清除明文并中止未完成的请求；中止请求不保证撤销已提交的服务端操作。
+- **导航**：hash 路由包含项目、看板、我的任务、通知、设置和账号。桌面使用侧栏，选中项以白底和紫色竖条标识；窄屏使用底部导航和侧滑项目菜单。
+- **看板**：桌面任务列独立滚动，隐藏列内滚动条；下方还有卡片时显示底部阴影。活动栏位于看板右侧，窄屏改为纵向排列，长列表随页面滚动。横向滚动保留。
+- **详情**：桌面抽屉分为内容区和属性区，窄屏合并为单列；图片附件可预览并打开原图。项目动态将评论单独展示，其余记录分组折叠。
+- **通知**：点击时标记已读，并按关联信息打开任务或项目；已读通知仍可跳转。邀请接受、拒绝独立处理；未读数为零时隐藏徽标。
+- **操作保护**：侧栏开关不重建页面；`Esc` 依次关闭筛选菜单、弹层、抽屉、侧栏。Android 下拉刷新仅允许从主内容顶部的非交互、非嵌套滚动区域开始。
+- **品牌与头像**：Web 标识使用 `static/favicon.svg`，Android 使用对应自适应图标资源。24 个预设头像按男生、女生、宠物和机器人分类，老账号按用户 ID 稳定分配默认头像。素材与缓存维护见[头像说明](static/avatars/README.md)。
+- **账号与凭证**：桌面表单分栏，窄屏单列。`static/js/tokens.js` 独立管理凭证请求和临时明文；离开账号页或登出时清除明文并中止请求，中止不保证撤销服务端已提交的操作。
 
 ### 后端测试
 
@@ -187,13 +187,13 @@ curl http://127.0.0.1:8000/api/health
 python -m pytest
 ```
 
-Windows 使用 `.venv\Scripts\python.exe -m pytest`。
+Windows 使用 `.venv/Scripts/python.exe -m pytest`。
 
 > **测试会删除测试库中的全部表。** `tests/conftest.py` 将 `DATABASE_URL` 覆盖为本机 3307 上的 `kanban_test`，每个用例前调用 `truncate_all()` 重建表，并清空限流和邮件捕获状态。不要将测试配置改成生产库，也不要让该端口指向生产数据库。
 
 `kanban_test` 由 [`deploy/initdb/01-test-db.sql`](deploy/initdb/01-test-db.sql) 在数据库卷首次初始化时创建并授权。已有卷不会重跑初始化脚本；缺少测试库时需手动创建并授予 `kanban` 用户权限，不要为此删除含有业务数据的卷。
 
-测试通过 `TestClient` 携带 `X-Kanban: 1`，使用 `MAIL_CAPTURE=1` 捕获验证码，不连接真实 SMTP。覆盖认证、请求头校验、验证码、看板初始化、邀请、角色权限、配额、附件、截止日期与主负责人等行为。
+测试通过 `TestClient` 携带 `X-Kanban: 1`，使用 `MAIL_CAPTURE=1` 捕获验证码，不连接真实 SMTP。覆盖认证、请求头校验、验证码、看板初始化、邀请、角色权限、配额、附件、截止日期、主负责人及任务创建事务。测试范围不等于当前版本已通过，结果以实际运行记录为准。
 
 凭证回归测试使用独立内存 SQLite，不连接 MariaDB：`python -m pytest tests/test_tokens.py -q`。覆盖摘要存储、仅创建时返回明文、Bearer 读写、凭证管理的 Cookie 限制、跨用户撤销隔离、项目权限、有限期过期与无限期持续有效、撤销失效、认证优先级及输入边界。
 
@@ -207,15 +207,23 @@ SSE 回归使用临时 SQLite 与本机 HTTP 服务，不连接 MariaDB：`pytho
 node --test tests/*.test.mjs
 ```
 
-浏览器回归是独立脚本，不由 pytest 自动收集。额外安装 Playwright 与 Chromium，默认使用 Playwright 安装的 Chromium，也可通过 `CHROMIUM_PATH` 指定浏览器可执行文件：
+浏览器回归使用本地静态服务器和模拟 API，不访问数据库，也不由 pytest 自动收集：
 
 ```bash
 python -m pip install playwright
 python -m playwright install chromium
 python tests/startup_browser.py
+python tests/desktop_browser.py
 ```
 
-脚本只使用本地静态服务器与模拟 API、SSE 通知，不访问数据库。覆盖启动恢复、账号与头像、通知，以及桌面和手机看板的节点保留、连续更新、阅读位置、草稿与交互保护。模拟响应按端点遵守真实 API 契约，未声明的端点返回 404，不以项目列表响应代替其他接口；启动期间切换账号页的回归会等待凭证列表加载完成后再验证返回导航。Android 构建、QA 服务与设备验收见 [Android README](android/README.md)。GitHub Actions 的 [CI](.github/workflows/ci.yml) 执行后端、网页、浏览器、QA 边界检查及 Android 构建检查；[发布流程](.github/workflows/release.yml)负责签名 APK，不部署服务器。
+| 脚本 | 范围 | 浏览器配置 |
+| --- | --- | --- |
+| `startup_browser.py` | 启动恢复、账号、SSE、节点与阅读位置保留、交互保护 | 支持 `CHROMIUM_PATH`，默认 Playwright Chromium |
+| `desktop_browser.py` | 响应式布局、任务创建、通知跳转、列底阴影、活动栏与附件预览 | 使用 Playwright Chromium |
+
+创建表单打开期间延后远端更新，关闭后恢复同步；对应回归验证草稿保留及取消后的列表刷新。后端事务用例需要本地 `kanban_test` 数据库。
+
+[CI](.github/workflows/ci.yml) 执行后端、JavaScript 单测、`startup_browser.py`、Android QA 边界检查及 Android 构建；同时执行 `desktop_browser.py` 验证布局和任务交互。[发布流程](.github/workflows/release.yml)签名并发布 APK，不部署服务器。Android 本地验收见[客户端文档](android/README.md)。
 
 ## API
 
@@ -243,7 +251,7 @@ curl https://kanban.faweisi.com/api/projects \
   --data '{"name":"Agent 项目"}'
 ```
 
-凭证管理接口仅接受网页登录 Cookie，不接受 Bearer 认证，避免 agent 自行创建新的长期凭证；创建/列表响应标记 `Cache-Control: no-store`。启动时会新建 `access_tokens` 表，已有 MySQL 表的 `expires_at` 若为非空字段，会自动升级为可空并保留现有到期时间。升级时数据库用户需有该表的 ALTER 权限。
+凭证管理接口仅接受网页登录 Cookie，不接受 Bearer 认证，避免 agent 自行创建新的长期凭证；创建/列表响应标记 `Cache-Control: no-store`。数据库结构升级见[部署与升级](#部署与升级)。
 
 
 <details>
@@ -269,7 +277,8 @@ curl https://kanban.faweisi.com/api/projects \
 | PATCH / DELETE | `/api/projects/{id}/members/{member_id}` | 修改角色 / 移除成员 |
 | GET | `/api/projects/{id}/activity` | 项目活动流 |
 | GET | `/api/projects/{id}/board` | 项目、角色、成员、标签、列表与卡片 |
-| POST | `/api/projects/{id}/columns`、`cards`、`labels` | 新建列表、卡片、标签 |
+| POST | `/api/projects/{id}/columns`、`labels` | 新建列表、标签 |
+| POST | `/api/projects/{id}/cards` | 新建任务；必填 `column_id`、`title`，可选 `description`、`due_on`、`responsible_user_id`；在同一事务内保存 |
 | POST | `/api/projects/{id}/columns/reorder` | 列表排序 |
 | PATCH / DELETE | `/api/columns/{id}`、`/api/labels/{id}` | 修改 / 删除列表与标签 |
 | GET / PATCH / DELETE | `/api/cards/{id}` | 详情 / 修改 / 删除；主负责人字段 `responsible_user_id` 可设成员 id，`null` 清空，省略不变 |
@@ -277,6 +286,8 @@ curl https://kanban.faweisi.com/api/projects \
 | PUT | `/api/cards/{id}/labels`、`assignees` | 全量替换标签 / 参与人；移除当前主负责人时同步清空该字段 |
 | POST | `/api/cards/{id}/checklists`、`comments`、`attachments` | 添加清单 / 评论 / 附件 |
 | PATCH / DELETE | `/api/checklists/{id}`、`/api/checklist-items/{id}`、`/api/comments/{id}` | 修改 / 删除子资源 |
+| POST | `/api/checklists/{id}/items` | 添加清单条目 |
+| DELETE | `/api/attachments/{id}` | 删除附件 |
 | GET | `/api/attachments/{id}/file` | 下载；图片扩展名使用 inline，其余使用 attachment |
 | GET | `/api/notifications` | 最近 80 条通知 |
 | POST | `/api/notifications/{id}/accept`、`reject`、`read` | 处理邀请 / 标记已读 |

@@ -8,6 +8,8 @@ import { createAvatarPicker } from "./avatar-picker.js";
 import { updateBoardDOM } from "./board-dom.js";
 import { createBoardSync } from "./board-sync.js";
 import { groupActivity } from "./activity.js";
+import { createColumnScrollCues } from "./column-scroll.js";
+import { cardCreateFields } from "./card-create.js";
 
 window.kanbanGestures = Object.freeze({ canPullRefreshAt });
 
@@ -33,7 +35,6 @@ const state = {
   filters: { q: "", mine: false, overdue: false, label: "", priority: "", hideDone: false, archived: false },
   sidebar: false,
   modal: null,
-  compose: null,
   dragging: false,
   authMode: "login",
   codeWait: 0,
@@ -42,6 +43,7 @@ const state = {
 };
 
 const app = document.getElementById("app");
+const refreshColumnScrollCues = createColumnScrollCues(app);
 const drawer = document.getElementById("drawer");
 const modal = document.getElementById("modal");
 const toasts = document.getElementById("toasts");
@@ -98,10 +100,6 @@ function acceptBoard(board) {
   state.board = board;
   syncProject(board.project);
   boardDay = today;
-  if (state.compose && !board.columns.some((column) => column.id === state.compose.columnId)) {
-    state.compose.columnId = board.columns[0]?.id;
-    changed = true;
-  }
   if (state.filters.label && !board.labels.some((label) => String(label.id) === String(state.filters.label))) {
     state.filters.label = "";
     changed = true;
@@ -261,7 +259,6 @@ async function loadProjects() {
 }
 
 async function openBoard(id, version) {
-  if (state.compose?.projectId !== id) state.compose = null;
   state.projectId = id;
   state.view = "board";
   state.cardId = null;
@@ -361,6 +358,7 @@ function render() {
   document.body.classList.toggle("is-auth", !authed);
   document.querySelector('meta[name="theme-color"]')?.setAttribute("content", "#f7f6f9");
   app.replaceChildren(authed ? shell() : authView());
+  refreshColumnScrollCues();
   if (!authed) startAuthMotion(app.querySelector(".auth"));
   paintBadges();
   if (state.cardId) paintDrawer();
@@ -760,6 +758,7 @@ function paintCanvas() {
   const page = document.querySelector(".board-page");
   if (!page || !state.board) return;
   updateBoardDOM(page, boardView());
+  refreshColumnScrollCues();
 }
 
 function columnNode(column) {
@@ -780,15 +779,9 @@ function columnNode(column) {
   );
   const body = el("div", { class: "column-cards" });
   for (const card of cards) body.append(cardNode(card, column));
-  node.append(head, body);
+  node.append(head, el("div", { class: "column-scroll" }, body));
   if (editable() && !state.filters.archived) {
-    if (state.compose?.columnId === column.id) {
-      node.append(el("form", { class: "composer", "data-form": "card" },
-        el("input", { name: "title", value: state.compose.title, placeholder: "卡片标题", "data-autofocus": "1", required: true }),
-        el("input", { type: "hidden", name: "column_id", value: column.id }),
-        el("button", { class: "btn-primary btn-tiny", text: "添加" }),
-      ));
-    } else node.append(el("button", { class: "add-card", "data-act": "compose", "data-column": column.id }, glyph("plus"), el("span", { text: "添加卡片" })));
+    node.append(el("button", { class: "add-card", "data-act": "compose", "data-column": column.id }, glyph("plus"), el("span", { text: "添加任务" })));
   }
   return node;
 }
@@ -881,11 +874,15 @@ function notesView() {
 
 function noteRow(note) {
   const pending = note.type === "project_invite" && note.status === "pending";
-  return el("article", { class: note.read ? "note" : "note is-unread", "data-act": note.read ? null : "read-note", "data-id": note.id },
+  const destination = note.type === "project_invite" && note.status !== "accepted" ? null : note.card_id ? "查看任务 →" : note.project_id ? "查看项目 →" : null;
+  return el("article", { class: note.read ? "note" : "note is-unread", "data-act": "open-note", "data-id": note.id },
     el("i", { class: "note-dot" }),
     el("div", { class: "note-main" },
-      el("header", {}, note.actor ? avatar(note.actor) : glyph("bell"), el("strong", { text: note.title }), el("span", { class: "muted", text: relative(note.created_at) })),
-      note.body ? el("p", { text: note.body }) : null,
+      el("button", { type: "button", class: "note-content", "data-act": "open-note", "data-id": note.id },
+        el("span", { class: "note-heading" }, note.actor ? avatar(note.actor) : glyph("bell"), el("strong", { text: note.title }), el("span", { class: "muted", text: relative(note.created_at) })),
+        note.body ? el("span", { class: "note-body", text: note.body }) : null,
+        el("span", { class: "note-destination", text: destination || (pending ? "接受邀请后可进入项目" : "查看通知") }),
+      ),
       pending ? el("div", { class: "row" },
         el("button", { class: "btn-primary btn-tiny", "data-act": "accept", "data-id": note.id, text: "批准" }),
         el("button", { class: "btn-ghost btn-tiny", "data-act": "reject", "data-id": note.id, text: "拒绝" }),
@@ -1195,6 +1192,7 @@ function paintModal() {
     card.append(el("div", { class: "field" }, "颜色", colorPicker(state.modal.color || COLORS[0])));
   }
   if (kind === "confirm") card.append(el("p", { text: state.modal.body }));
+  if (kind === "card") card.append(...cardCreateFields(state.board, state.modal.columnId));
   card.append(el("div", { class: "modal-foot" },
     el("button", { type: "button", class: "btn-ghost", "data-act": "close-modal", text: "取消" }),
     el("button", { type: "submit", class: kind === "confirm" ? "btn-danger" : "btn-primary", text: state.modal.ok || "确定" }),
@@ -1311,12 +1309,9 @@ const clicks = {
   },
 
   compose(node) {
-    const columnId = Number(node.dataset.column);
-    if (state.compose?.columnId !== columnId) {
-      state.compose = { projectId: state.projectId, columnId, title: state.compose?.title ?? "" };
-      paintCanvas();
-    }
-    document.querySelector("[data-autofocus]")?.focus();
+    state.modal = { type: "card", title: "创建任务", ok: "创建任务", columnId: Number(node.dataset.column), projectId: state.projectId };
+    paintModal();
+    modal.querySelector("[data-autofocus]")?.focus();
   },
   "new-column"() {
     state.modal = { type: "column", title: "新列表", ok: "添加" };
@@ -1363,19 +1358,29 @@ const clicks = {
   reject(node) {
     run(node, async () => { await api(`/api/notifications/${idOf(node)}/reject`, { method: "POST" }); await openNotes(); });
   },
-  "read-note"(node) {
+  "open-note"(node) {
+    node = node.closest(".note");
     const id = idOf(node);
     const note = state.notes.find((item) => item.id === id);
-    if (!note || note.read || node.dataset.reading === "1") return;
+    if (!note || node.dataset.reading === "1") return;
     node.dataset.reading = "1";
     run(node, async () => {
       try {
-        await api(`/api/notifications/${id}/read`, { method: "POST" });
-        note.read = true;
-        state.unread = Math.max(0, state.unread - 1);
-        node.classList.remove("is-unread");
-        delete node.dataset.act;
-        paintBadges();
+        if (!note.read) {
+          await api(`/api/notifications/${id}/read`, { method: "POST" });
+          note.read = true;
+          state.unread = Math.max(0, state.unread - 1);
+          node.classList.remove("is-unread");
+          paintBadges();
+        }
+        if (note.type === "project_invite" && note.status !== "accepted") {
+          toast(note.status === "pending" ? "请先接受邀请，再进入项目" : "此邀请已失效");
+        } else if (note.project_id) {
+          state.pendingCard = note.card_id || null;
+          go(`#/board/${note.project_id}`);
+        } else {
+          toast("关联内容已不可用");
+        }
       } finally {
         delete node.dataset.reading;
       }
@@ -1499,8 +1504,14 @@ const forms = {
     }
   },
   async card(data) {
-    await api(`/api/projects/${state.projectId}/cards`, { method: "POST", body: { column_id: Number(data.column_id), title: data.title } });
-    state.compose = null;
+    const draft = state.modal;
+    await api(`/api/projects/${draft.projectId}/cards`, { method: "POST", body: {
+      column_id: Number(data.column_id), title: data.title, description: data.description,
+      responsible_user_id: data.responsible_user_id ? Number(data.responsible_user_id) : null,
+      due_on: data.due_on || null,
+    } });
+    if (state.modal === draft) { state.modal = null; paintModal(); }
+    toast("任务已创建，点击任务可继续补充详情");
     await reloadBoard();
   },
   async invite(data) {
@@ -1571,9 +1582,6 @@ document.addEventListener("change", (event) => {
 });
 
 document.addEventListener("input", (event) => {
-  if (state.compose && event.target.matches('.composer input[name="title"]')) {
-    state.compose.title = event.target.value;
-  }
   if (event.target.id === "board-search") {
     state.filters.q = event.target.value;
     paintCanvas();

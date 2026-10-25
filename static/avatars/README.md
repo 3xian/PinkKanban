@@ -1,12 +1,22 @@
 # 预设头像
 
-24 个原创手绘涂鸦头像，使用内置 imagegen 生成。运行时文件为 192×192 的 WebP，使用 Lanczos 缩小并以质量 80 编码，适配最大 56px 的头像及三倍像素密度屏幕；全部素材合计 181,644 字节，较原先 3,036,268 字节减少 94%。压缩直接使用 PNG 原稿，避免多次有损编码。PNG 原稿保存在生成工具的本地输出目录，不作为运行依赖。
+24 个手绘涂鸦头像，按男生、女生、宠物、机器人分为 4 类，每类 6 个。素材由 imagegen 生成，运行时仅依赖本目录的 WebP 文件。
 
-应用生成的头像 URL 带有 `?v=1`，成功响应与条件请求的 304 响应允许浏览器缓存一年（`public, max-age=31536000, immutable`）；未版本化的请求仍须验证缓存。以后更换头像文件时，必须同步增加 `static/js/avatars.js` 的 URL 版本号，让浏览器获取新素材。选择器只加载当前分类的 6 个头像。单文件预算为 16 KiB，整套预算为 256 KiB，由前端测试检查。
+## 规格与维护
+
+- **尺寸与体积**：192×192 WebP，当前合计 181,644 字节；单文件预算 16 KiB，整套预算 256 KiB，由前端测试检查。
+- **生成与压缩**：记录中的处理流程为 PNG 原稿经 Lanczos 缩小、质量 80 编码。原稿未入库，重新制作前需自行保存源文件，避免反复有损压缩。
+- **展示**：适配最大 56px 的头像及三倍像素密度屏幕，关键特征放在中央 80% 区域，供界面圆形裁切。
+- **注册**：分类和 ID 位于 `static/js/avatars.js`，服务端白名单位于 `app/constants.py`；新增或删除素材时同步修改两处。
+- **缓存**：URL 当前带 `?v=1`，成功与 304 响应允许缓存一年；未版本化请求要求重新验证。替换素材必须增加 URL 版本号。
+- **加载**：选择器只加载当前分类的 6 个头像；老账号按用户 ID 稳定分配默认头像，不推断性别。
 
 ## 画风与提示词
 
-参考用户选定的 C 组：粗黑手绘线条、平涂、轻微纸张纹理、活泼表情。先生成 male-1，再以它作为其余 23 个头像的画风参考。
+风格基准为粗黑手绘线条、平涂、轻微纸张纹理和活泼表情。先生成 `male-1`，再以它作为其余头像的参考。以下保留原始生成提示词；其中提及的 C 面板属于未入库的参考图，复用时可改用现有 `male-1.webp`。
+
+<details>
+<summary>原始提示词与角色清单</summary>
 
 male-1 的提示词：
 
@@ -42,3 +52,4 @@ male-1 的提示词：
 | robot-5 | Single cute pink robot head and upper shoulders, round capsule head with chunky headphones, black screen face with big sparkly dot eyes and smile, pale mint background. Strictly flat hand drawn doodle, no 3D. |
 | robot-6 | Single cute cream colored retro robot head and upper shoulders, broad rounded trapezoid head, spring coil antenna, asymmetrical round ear discs, black screen eyes laughing shut, coral neck scarf, pale pink background. Strictly flat hand drawn doodle, no 3D. |
 
+</details>

@@ -274,6 +274,9 @@ class ReorderIn(BaseModel):
 class CardIn(BaseModel):
     column_id: int
     title: str
+    description: str = Field(default="", max_length=20000)
+    due_on: date | None = None
+    responsible_user_id: int | None = None
 
     @field_validator("title")
     @classmethod

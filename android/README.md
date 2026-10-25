@@ -1,6 +1,6 @@
 # 看板 Android
 
-原生 Java Android 工程，应用名 **看板**，默认服务 `https://kanban.faweisi.com`。首版使用 WebView 承载现有移动端界面，项目、看板、任务、通知、成员管理、清单和评论与网页共用功能和权限。最低 Android 8.0（API 26），编译/目标 API 36。
+原生 Java Android 工程，应用名 **看板**，默认服务 `https://kanban.faweisi.com`。使用 WebView 承载现有移动端界面，项目、看板、任务、通知、成员管理、清单和评论与网页共用功能和权限。最低 Android 8.0（API 26），编译/目标 API 36。
 
 Android 侧不显示原生顶栏，顶部状态栏和底部导航栏使用浅色背景（`#FAF9F7`）及深色图标，兼容透明系统栏区域与手势/三键导航。提供页面顶部下拉刷新、自适应键盘、断网/服务错误重试、登录 Cookie 保持、返回键依次关闭弹层/卡片/侧边栏并返回上个页面、文件选择上传，以及带登录会话的附件保存。横向滑动和网页内独立滚动区域不会触发刷新。外部链接交给系统浏览器，附件使用系统“保存到”选择器，无需存储或相机权限。
 
@@ -8,7 +8,7 @@ Android 侧不显示原生顶栏，顶部状态栏和底部导航栏使用浅色
 
 ## 构建
 
-在 Android Studio 中打开本目录，使用 JDK 17、SDK Platform 36 和 Build Tools 35.0.0。Gradle Wrapper 为 8.13，Android Gradle Plugin 为 8.13.2（[官方兼容信息](https://developer.android.com/build/releases/agp-8-13-0-release-notes)）。
+在 Android Studio 中打开本目录，使用 JDK 17、SDK Platform 36 和 Build Tools 35.0.0。Gradle Wrapper 为 8.13，Android Gradle Plugin 为 8.13.2，版本以仓库 Gradle 配置为准。
 
 `local.properties` 不入库，按本机 SDK 位置设置，例如：
 
@@ -19,13 +19,13 @@ sdk.dir=F\:/AndroidSDK
 从仓库根目录执行（Windows）：
 
 ```powershell
-cmd.exe /c android\gradlew.bat -p android assembleDebug testDebugUnitTest lintDebug
+cmd.exe /c android/gradlew.bat -p android assembleDebug testDebugUnitTest lintDebug
 ```
 
-调试 APK：`app/build/outputs/apk/debug/app-debug.apk`，包名 `com.faweisi.kanban.debug`。正式包名 `com.faweisi.kanban`，版本 `1.0.1`（`versionCode=3`）。正式构建：
+调试 APK（仓库根目录相对路径）：`android/app/build/outputs/apk/debug/app-debug.apk`，包名 `com.faweisi.kanban.debug`。正式包名 `com.faweisi.kanban`，版本 `1.0.1`（`versionCode=3`）。正式构建：
 
 ```powershell
-cmd.exe /c android\gradlew.bat -p android assembleRelease lintRelease
+cmd.exe /c android/gradlew.bat -p android assembleRelease lintRelease
 ```
 
 Release 默认未签名，使用 Android Studio 的 **Generate Signed App Bundle / APK** 和自己的发布密钥签名；密钥文件与口令不要入库。Debug 使用自动生成的开发密钥，适合本机安装验收，不用于商店发布。
@@ -34,24 +34,26 @@ Release 默认未签名，使用 Android Studio 的 **Generate Signed App Bundle
 
 GitHub Actions 的 `CI` 在分支 push、PR 和手动运行时检查后端 API、网页单测、浏览器启动流程、QA 服务边界，并构建 Debug / Release APK、运行 Android 单测和 Lint。后端只使用 Actions 临时 MariaDB 的 `kanban_test` 库；普通 CI 不读取发布密钥。APK 和 Android 检查报告保存在运行的 Artifacts 中。
 
-发布前修改 `app/build.gradle` 的 `versionName` 和递增的 `versionCode`，提交到 `main`，再推送对应的 `vMAJOR.MINOR.PATCH` 标签。例如版本名 `1.0.1` 对应标签 `v1.0.1`。`Android Release` 会检查标签属于 `main` 历史、重新运行完整 CI、确认 APK 版本与标签一致、签名并创建 GitHub Release（已有 Release 则更新 APK 和校验附件）。它不会部署服务器。
+发布前修改 `android/app/build.gradle` 的 `versionName` 和递增的 `versionCode`，提交到 `main`，再推送对应的 `vMAJOR.MINOR.PATCH` 标签。例如版本名 `1.0.1` 对应标签 `v1.0.1`。`Android Release` 会检查标签属于 `main` 历史、重新运行完整 CI、确认 APK 版本与标签一致、签名并创建 GitHub Release（已有 Release 则更新 APK 和校验附件）。它不会部署服务器。
 
 仓库 Secrets：`ANDROID_KEYSTORE_BASE64`（密钥库文件的 Base64）、`ANDROID_KEY_ALIAS`、`ANDROID_STORE_PASSWORD`、`ANDROID_KEY_PASSWORD`。必须沿用现有发布密钥，不要每次生成新密钥。签名仅在独立发布任务中进行，密钥临时文件会清除。
 
-也可以手动运行 `Android Release`：`publish=false` 默认验证所选分支并生成签名 Artifact，标签字段指定预期 APK 版本；`publish=true` 则构建标签所指向的提交并更新 GitHub Release。试运行当前分支时可填 `v1.0.1`，无需移动现有标签。
+也可以手动运行 `Android Release`：`publish=false` 验证所选提交并生成签名 Artifact，标签字段指定预期 APK 版本；所选提交仍须属于 `origin/main` 历史；`publish=true` 则构建标签所指向的提交并更新 GitHub Release。试运行符合上述条件的提交时可填 `v1.0.1`，无需移动现有标签。
 
 ## 本地验收
+
+[验收记录](qa/RESULTS.md)是历史结果，不代表当前源码已完成设备回归。
 
 测试服务器仅使用内存模拟数据、现有静态页面，不读取 `.env`，不连接数据库或生产 API：
 
 ```powershell
 python android/qa/server.py --port 8765
-cmd.exe /c android\gradlew.bat -p android assembleDebug -PkanbanUrl=http://10.0.2.2:8765
+cmd.exe /c android/gradlew.bat -p android assembleDebug -PkanbanUrl=http://10.0.2.2:8765
 F:/AndroidSDK/platform-tools/adb.exe -s emulator-5554 install -r android/app/build/outputs/apk/debug/app-debug.apk
 F:/AndroidSDK/platform-tools/adb.exe -s emulator-5554 shell am start -n com.faweisi.kanban.debug/com.faweisi.kanban.MainActivity
 ```
 
-模拟登录：`android@example.test` / `android-qa-pass`。服务只模拟验收所需的登录、项目、看板、卡片修改、附件上传下载和空通知/任务，其他操作会返回 404。
+模拟登录：`android@example.test` / `android-qa-pass`。服务只模拟验收所需的登录、项目、看板、卡片修改、附件上传下载和空通知/任务，不模拟创建任务、邀请处理或 SSE；未实现的 API 返回 404。完整网页交互可另运行 `tests/desktop_browser.py`。
 
 `python android/qa/device.py dump` 输出 UI 文本和边界；`tap "文本"` 根据当前 UI 树定位；`screenshot android/qa-output/screen.png` 保存截图。可传 `--adb` 和 `--serial` 指定环境。选择附件 `android-qa.txt` 下载后再上传，可验证上传内容；服务器验证会话 Cookie 和写操作 `X-Kanban: 1`。
 
