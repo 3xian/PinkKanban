@@ -197,7 +197,7 @@ body:not(.is-auth) .floating-menu { display: none; }
 .page-actions, .row { display: flex; align-items: center; gap: 8px; }
 .board-page { min-width: 0; }
 .board-workspace { min-width: 0; min-height: 0; }
-.project-activity { position: fixed; right: 24px; bottom: 32px; z-index: 14; width: min(320px, calc(100vw - 32px)); background: linear-gradient(145deg, #f1eaf5c9, #eee8f3b8); border: 1px solid #ffffffb3; border-radius: 20px; box-shadow: 0 16px 48px #49335f26, 0 3px 12px #49335f14, inset 0 1px 0 #ffffff80; backdrop-filter: blur(22px) saturate(140%); -webkit-backdrop-filter: blur(22px) saturate(140%); }
+.project-activity { position: fixed; right: 24px; bottom: 32px; z-index: 14; width: min(320px, calc(100vw - 32px)); background: linear-gradient(145deg, #f1eaf566, #eee8f352); border: 1px solid #ffffffb3; border-radius: 20px; box-shadow: 0 16px 48px #49335f26, 0 3px 12px #49335f14, inset 0 1px 0 #ffffff80; backdrop-filter: blur(12px) saturate(135%); -webkit-backdrop-filter: blur(12px) saturate(135%); }
 .project-activity:not([open]) { width: auto; }
 .project-activity-head { display: flex; align-items: center; gap: 12px; padding: 16px; cursor: pointer; list-style: none; border-radius: inherit; }
 .project-activity-head::-webkit-details-marker { display: none; }
