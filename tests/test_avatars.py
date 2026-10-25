@@ -49,6 +49,11 @@ def test_legacy_avatar_default_and_profile_persistence(avatar_client):
     board = client.get(f"/api/projects/{project['id']}/board").json()
     assert board["members"][0]["avatar_id"] == "robot-6"
     assert client.get("/api/bootstrap").json()["user"]["avatar_id"] == "robot-6"
+    for path in ("/api/bootstrap", "/api/projects"):
+        listed = client.get(path).json()["projects"][0]
+        assert listed["member_count"] == 1
+        assert listed["member_preview"][0]["avatar_id"] == "robot-6"
+        assert "email" not in listed["member_preview"][0]
 
 
 @pytest.mark.parametrize("invalid", [None, "", "pet-7", "male-0", "../secret", "https://example.com/avatar.png"])

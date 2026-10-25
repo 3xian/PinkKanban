@@ -384,6 +384,7 @@ def card_detail(db: Session, card_id: int, user: User) -> dict:
         db.scalars(select(Activity).where(Activity.card_id == card.id).order_by(Activity.id.desc()).limit(30))
     )
     actors = _users(db, {item.user_id for item in activity})
+    activity_comments = {comment.id: comment for comment in comments}
     payload = _card_brief(card, label_ids, assignee_ids, *_checklist_progress(by_list), len(comments), len(files))
     payload["description"] = card.description or ""
     payload["project_id"] = project.id
@@ -407,7 +408,7 @@ def card_detail(db: Session, card_id: int, user: User) -> dict:
             for comment in comments
         ],
         "attachments": [attachment_dict(row) for row in files],
-        "activity": [_activity_item(item, actors) for item in activity],
+        "activity": [_activity_item(item, actors, activity_comments) for item in activity],
     }
 
 
@@ -545,7 +546,8 @@ def add_comment(db: Session, card_id: int, user: User, body: str) -> Comment:
             project_id=project.id,
             card_id=card.id,
         )
-    _activity(db, project_id=project.id, user_id=user.id, action="comment.added", card_id=card.id, detail={"title": card.title})
+    db.flush()
+    _activity(db, project_id=project.id, user_id=user.id, action="comment.added", card_id=card.id, detail={"title": card.title, "comment_id": comment.id})
     db.flush()
     return comment
 

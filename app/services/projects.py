@@ -13,6 +13,7 @@ from app.models import (
     Attachment,
     BoardColumn,
     Card,
+    Comment,
     Label,
     Notification,
     Project,
@@ -36,6 +37,8 @@ from app.services.base import (
 )
 from app.services.members import _member_rows
 
+PROJECT_AVATAR_LIMIT = 5
+
 
 def create_user(db: Session, *, email: str, password_hash: str, display_name: str) -> User:
     user = User(email=email, password_hash=password_hash, display_name=display_name, avatar_color=color_for(email))
@@ -56,13 +59,43 @@ def list_projects(db: Session, user: User, *, archived: bool) -> list[dict]:
     ).all()
     ids = [project.id for project, _role in rows]
     members = _grouped_count(db, ProjectMember.project_id, ids)
+    previews = _member_previews(db, ids)
     cards = _grouped_count(db, Card.project_id, ids, Card.archived.is_(False))
     result = []
     for project, role in rows:
         item = project_brief(project)
-        item.update({"role": role, "member_count": members.get(project.id, 0), "open_cards": cards.get(project.id, 0)})
+        item.update({
+            "role": role,
+            "member_count": members.get(project.id, 0),
+            "member_preview": previews.get(project.id, []),
+            "open_cards": cards.get(project.id, 0),
+        })
         result.append(item)
     return result
+
+
+def _member_previews(db: Session, ids: list[int]) -> dict[int, list[dict]]:
+    if not ids:
+        return {}
+    # Bound each project's preview in one query, with its owner first.
+    ranked = select(
+        ProjectMember.project_id,
+        ProjectMember.user_id,
+        func.row_number().over(
+            partition_by=ProjectMember.project_id,
+            order_by=((ProjectMember.role == "owner").desc(), ProjectMember.joined_at, ProjectMember.id),
+        ).label("position"),
+    ).where(ProjectMember.project_id.in_(ids)).subquery()
+    rows = db.execute(
+        select(ranked.c.project_id, User)
+        .join(User, User.id == ranked.c.user_id)
+        .where(ranked.c.position <= PROJECT_AVATAR_LIMIT)
+        .order_by(ranked.c.project_id, ranked.c.position)
+    )
+    previews = {}
+    for project_id, person in rows:
+        previews.setdefault(project_id, []).append(user_brief(person))
+    return previews
 
 
 def _grouped_count(db: Session, column, ids: list[int], extra=None) -> dict[int, int]:
@@ -190,20 +223,35 @@ def transfer_project(db: Session, project_id: int, user: User, target_id: int) -
     )
 
 
-def _activity_item(item: Activity, actors: dict[int, User]) -> dict:
+def _activity_item(item: Activity, actors: dict[int, User], comments: dict[int, Comment] | None = None) -> dict:
     person = actors.get(item.user_id)
+    detail = loads(item.detail)
+    if item.action == "comment.added":
+        comment = (comments or {}).get(detail.get("comment_id"))
+        if comment and comment.card_id == item.card_id and comment.user_id == item.user_id:
+            detail["body"] = comment.body
+        else:
+            detail["body"] = None
+            detail["comment_status"] = "deleted" if detail.get("comment_id") else "unavailable"
     return {
         "id": item.id,
         "action": item.action,
-        "detail": loads(item.detail),
+        "detail": detail,
         "created_at": iso(item.created_at),
         "card_id": item.card_id,
         "user": user_brief(person) if person else None,
     }
 
 
+def _activity_comments(db: Session, rows: list[Activity]) -> dict[int, Comment]:
+    ids = {loads(row.detail).get("comment_id") for row in rows if row.action == "comment.added"}
+    ids.discard(None)
+    return {comment.id: comment for comment in db.scalars(select(Comment).where(Comment.id.in_(ids)))} if ids else {}
+
+
 def activity_list(db: Session, project_id: int, user: User) -> dict:
     require_access(db, project_id, user)
     rows = list(db.scalars(select(Activity).where(Activity.project_id == project_id).order_by(Activity.id.desc()).limit(80)))
     actors = _users(db, {row.user_id for row in rows})
-    return {"items": [_activity_item(row, actors) for row in rows]}
+    comments = _activity_comments(db, rows)
+    return {"items": [_activity_item(row, actors, comments) for row in rows]}

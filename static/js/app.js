@@ -7,6 +7,7 @@ import { createTokenPanel } from "./tokens.js";
 import { createAvatarPicker } from "./avatar-picker.js";
 import { updateBoardDOM } from "./board-dom.js";
 import { createBoardSync } from "./board-sync.js";
+import { groupActivity } from "./activity.js";
 
 window.kanbanGestures = Object.freeze({ canPullRefreshAt });
 
@@ -22,6 +23,9 @@ const state = {
   board: null,
   settings: null,
   activity: [],
+  projectActivity: [],
+  activityStatus: "loading",
+  activityExpanded: new Set(),
   cardId: null,
   detail: null,
   tasks: [],
@@ -49,18 +53,9 @@ let boardDay = new Date().toDateString();
 const activePointers = new Set();
 const liveBoard = createBoardSync({
   load: (id, signal) => api(`/api/projects/${id}/board`, { signal }),
-  apply(board) {
-    const today = new Date().toDateString();
-    if (JSON.stringify(board) === JSON.stringify(state.board) && boardDay === today) return;
-    state.board = board;
-    boardDay = today;
-    if (state.compose && !board.columns.some((column) => column.id === state.compose.columnId)) {
-      state.compose.columnId = board.columns[0]?.id;
-    }
-    paintCanvas();
-  },
+  apply(board) { if (acceptBoard(board)) paintCanvas(); },
   isBusy: () => activeOperations > 0 || state.dragging || activePointers.size > 0 ||
-    state.modal || state.cardId || document.hidden || performance.now() - lastBoardScroll < 250 ||
+    state.modal || !drawer.hidden || document.hidden || performance.now() - lastBoardScroll < 250 ||
     document.activeElement?.closest('input, textarea, select, [contenteditable="true"]') ||
     document.querySelector(".filter-trigger.is-open") || window.getSelection()?.isCollapsed === false,
   onUnauthorized() { state.user = null; render(); },
@@ -86,6 +81,32 @@ function toast(message) {
   const node = el("div", { class: "toast" }, glyph("info"), el("span", { text: message }));
   toasts?.append(node);
   setTimeout(() => node.remove(), 3200);
+}
+
+function reportError(error) {
+  toast(error.message || "请求失败");
+  if (error.status === 401) {
+    state.user = null;
+    render();
+  }
+}
+
+// All snapshots reconcile dependent UI state before choosing how to render.
+function acceptBoard(board) {
+  const today = new Date().toDateString();
+  let changed = JSON.stringify(board) !== JSON.stringify(state.board) || boardDay !== today;
+  state.board = board;
+  syncProject(board.project);
+  boardDay = today;
+  if (state.compose && !board.columns.some((column) => column.id === state.compose.columnId)) {
+    state.compose.columnId = board.columns[0]?.id;
+    changed = true;
+  }
+  if (state.filters.label && !board.labels.some((label) => String(label.id) === String(state.filters.label))) {
+    state.filters.label = "";
+    changed = true;
+  }
+  return changed;
 }
 
 function go(hash) {
@@ -199,6 +220,7 @@ async function poll() {
     const notes = await api("/api/notifications");
     state.unread = notes.unread;
     paintBadges();
+    if (state.view === "board") await refreshProjectActivity();
     if (state.view === "board" && boardDay !== new Date().toDateString()) liveBoard.invalidate();
   } catch (error) {
     if (error.status === 401) {
@@ -244,20 +266,53 @@ async function openBoard(id, version) {
   state.view = "board";
   state.cardId = null;
   drawer.hidden = true;
+  state.projectActivity = [];
+  state.activityStatus = "loading";
   const board = await api(`/api/projects/${id}/board`);
   if (version !== navigationVersion) return;
-  state.board = board;
+  acceptBoard(board);
   const pending = state.pendingCard;
   state.pendingCard = null;
   render();
+  void refreshProjectActivity();
   if (state.view === "board" && state.projectId === id) liveBoard.start(id);
   if (pending && state.view === "board" && state.projectId === id) await openCard(pending);
 }
+
+let activityRequest = 0;
+async function refreshProjectActivity() {
+  if (state.view !== "board" || !state.projectId) return;
+  const id = state.projectId, version = navigationVersion, request = ++activityRequest;
+  try {
+    const data = await api(`/api/projects/${id}/activity`);
+    if (version !== navigationVersion || request !== activityRequest || state.view !== "board") return;
+    state.projectActivity = data.items;
+    state.activityStatus = "ready";
+  } catch {
+    if (version !== navigationVersion || request !== activityRequest || state.view !== "board") return;
+    state.activityStatus = "error";
+  }
+  const panel = app.querySelector(".project-activity");
+  if (panel) {
+    const scroll = panel.querySelector(".project-activity-feed")?.scrollTop || 0;
+    updateBoardDOM(panel, projectActivityPanel());
+    panel.querySelector(".project-activity-feed").scrollTop = scroll;
+  }
+}
+
+document.addEventListener("toggle", (event) => {
+  const group = event.target.closest?.(".activity-group");
+  if (!group) return;
+  const id = Number(group.dataset.activityGroup);
+  if (group.open) state.activityExpanded.add(id);
+  else state.activityExpanded.delete(id);
+}, true);
 
 async function openSettings(id) {
   state.projectId = id;
   state.view = "settings";
   state.settings = await api(`/api/projects/${id}`);
+  syncProject(state.settings.project);
   state.activity = (await api(`/api/projects/${id}/activity`)).items;
   render();
 }
@@ -277,9 +332,18 @@ async function openNotes() {
 }
 
 async function openCard(id) {
+  const version = navigationVersion;
   state.cardId = id;
-  state.detail = await api(`/api/cards/${id}`);
-  paintDrawer();
+  try {
+    const detail = await api(`/api/cards/${id}`);
+    if (version !== navigationVersion || state.cardId !== id) return;
+    state.detail = detail;
+    paintDrawer();
+  } catch (error) {
+    if (version !== navigationVersion || state.cardId !== id) return;
+    closeDrawer();
+    reportError(error);
+  }
 }
 
 function closeDrawer() {
@@ -287,6 +351,7 @@ function closeDrawer() {
   state.detail = null;
   drawer.hidden = true;
   drawer.replaceChildren();
+  liveBoard.resume();
 }
 
 function render() {
@@ -487,6 +552,24 @@ function setSidebar(open) {
   app.querySelector("[data-act=toggle-side]")?.setAttribute("aria-expanded", String(open));
 }
 
+function projectMark(project) {
+  return el("span", { class: "project-mark", "aria-hidden": "true", text: Array.from(project.name.trim())[0] || "项" });
+}
+
+function syncProject(project) {
+  for (const list of [state.projects, state.archivedProjects]) {
+    const item = list.find((item) => item.id === project.id);
+    if (item) Object.assign(item, project);
+  }
+  for (const link of app.querySelectorAll(".project-link")) {
+    if (Number(link.dataset.id) !== project.id) continue;
+    link.style.setProperty("--project-color", safeColor(project.color));
+    link.querySelector(".project-name").textContent = project.name;
+    link.querySelector(".project-mark").textContent = Array.from(project.name.trim())[0] || "项";
+    link.title = project.name;
+  }
+}
+
 function shell() {
   return el("div", { class: "shell" },
     el("aside", { class: state.sidebar ? "sidebar is-open" : "sidebar" },
@@ -496,12 +579,12 @@ function shell() {
         nav("tasks", "我的任务", "tasks"),
         nav("notifications", "通知", "bell", true),
       ),
-      el("div", { class: "side-label", text: "工作空间 / 最近项目" }),
+      el("div", { class: "side-label", text: "项目空间" }),
       el("div", { class: "side-projects" }, ...state.projects.slice(0, 12).map((project) => {
-        const link = el("button", { class: project.id === state.projectId ? "project-link is-on" : "project-link", "data-act": "open-project", "data-id": project.id });
-        const dot = el("i", { class: "dot" });
-        dot.style.setProperty("--c", safeColor(project.color));
-        link.append(dot, el("span", { text: project.name }));
+        const active = ["board", "settings"].includes(state.view) && project.id === state.projectId;
+        const link = el("button", { class: active ? "project-link is-on" : "project-link", "data-act": "open-project", "data-id": project.id, "aria-current": active ? "page" : null, title: project.name });
+        link.style.setProperty("--project-color", safeColor(project.color));
+        link.append(projectMark(project), el("span", { class: "project-name", text: project.name }));
         return link;
       })),
       el("div", { class: "side-foot" },
@@ -551,7 +634,7 @@ function viewBody() {
 
 function projectsView() {
   const list = state.showArchived ? state.archivedProjects : state.projects;
-  return el("section", {},
+  return el("section", { class: "projects-page" },
     el("div", { class: "page-head" },
       el("div", {}, el("h2", { text: state.showArchived ? "归档" : "项目" }), el("p", { text: `今天还可创建 ${state.quota.remaining} / ${state.quota.limit} 个` })),
       el("div", { class: "page-actions" },
@@ -567,20 +650,32 @@ function emptyState(title, body) {
   return el("div", { class: "empty" }, el("div", { class: "empty-mark" }, glyph("board")), el("strong", { text: title }), body ? el("p", { text: body }) : null);
 }
 
+const PROJECT_AVATAR_LIMIT = 5;
+
+function projectMembers(project) {
+  const people = (project.member_preview || []).slice(0, PROJECT_AVATAR_LIMIT);
+  const remaining = Math.max(0, (project.member_count || 0) - people.length);
+  return el("span", { class: "faces project-members", role: "group", "aria-label": "项目成员" },
+    ...people.map((person) => avatar(person)),
+    remaining ? el("span", { class: "avatar project-members-more", title: `另有 ${remaining} 位成员`, "aria-label": `另有 ${remaining} 位成员`, text: `+${remaining}` }) : null,
+  );
+}
+
 function projectCard(project) {
   const card = el("button", { class: "project-card", "data-act": "open-project", "data-id": project.id });
-  card.style.setProperty("--c", safeColor(project.color));
-  const dot = el("i", { class: "dot" });
-  dot.style.setProperty("--c", safeColor(project.color));
+  card.style.setProperty("--project-color", safeColor(project.color));
   const go = glyph("arrow");
   go.classList.add("project-go");
   card.append(
-    el("div", { class: "project-top" }, dot, el("strong", { text: project.name }), go),
-    el("p", { text: project.description || "没有简介" }),
-    el("div", { class: "project-foot" },
-      el("span", { text: `${project.open_cards} 张卡片` }),
-      el("span", { text: `${project.member_count} 人` }),
-      el("span", { class: "project-role", text: ROLES[project.role] || "" }),
+    el("div", { class: "project-cover", "aria-hidden": "true" }, projectMark(project), go),
+    el("div", { class: "project-body" },
+      el("div", { class: "project-top" }, el("strong", { text: project.name })),
+      el("p", { text: project.description || "没有简介" }),
+      el("div", { class: "project-foot" },
+        el("span", { text: `${project.open_cards} 张卡片` }),
+        projectMembers(project),
+        el("span", { class: "project-role", text: ROLES[project.role] || "" }),
+      ),
     ),
   );
   return card;
@@ -592,12 +687,9 @@ function boardView() {
   const today = new Date();
   const firstColumn = state.board.columns[0];
   return el("section", { class: "board-page" },
-    el("div", { class: "board-head" },
-      el("div", { class: "board-date" },
-        el("strong", { text: today.toLocaleDateString("zh-CN", { month: "long" }) }),
-        el("span", { text: today.toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric", weekday: "long" }) }),
-      ),
-      el("div", { class: "board-heading" }, el("h2", { text: project.name }), el("p", { class: "muted", text: project.description || "把卡片拖到它该在的位置。" })),
+    el("div", { class: "board-head", style: `--project-color: ${safeColor(project.color)}` },
+      el("div", { class: "board-heading" }, projectMark(project), el("div", { class: "board-title" }, el("h2", { text: project.name }), el("p", { class: "muted", text: project.description || "把卡片拖到它该在的位置。" }))),
+      el("div", { class: "board-date" }, el("span", { text: today.toLocaleDateString("zh-CN", { month: "long", day: "numeric", weekday: "long" }) })),
       el("div", { class: "board-people" },
         el("div", { class: "faces" }, ...state.board.members.slice(0, 5).map((person) => avatar(person))),
         el("button", { class: "btn-ghost", "data-act": "open-settings", "data-id": project.id }, glyph("user"), el("span", { text: "成员" })),
@@ -617,7 +709,7 @@ function boardView() {
       ], state.filters.priority),
       el("span", { class: "filter-note", "data-filter-lock": "1", hidden: !filtersOn() }, glyph("info"), "筛选开启时暂停拖拽"),
     ),
-    canvasNode(),
+    el("div", { class: "board-workspace" }, canvasNode(), projectActivityPanel()),
   );
 }
 
@@ -753,14 +845,17 @@ function cardNode(card, column) {
 }
 
 function tasksView() {
+  const pending = state.tasks.filter((card) => !card.done);
+  const completed = state.tasks.filter((card) => card.done);
   const groups = [
-    ["延期", state.tasks.filter((card) => dueInfo(card.due_on)?.over && !card.done)],
-    ["今天", state.tasks.filter((card) => dueInfo(card.due_on)?.today && !card.done)],
-    ["之后", state.tasks.filter((card) => !dueInfo(card.due_on)?.over && !dueInfo(card.due_on)?.today)],
+    ["延期", pending.filter((card) => dueInfo(card.due_on)?.over)],
+    ["今天", pending.filter((card) => dueInfo(card.due_on)?.today)],
+    ["之后与未设日期", pending.filter((card) => !dueInfo(card.due_on)?.over && !dueInfo(card.due_on)?.today)],
   ];
-  return el("section", {},
-    el("div", { class: "page-head" }, el("div", {}, el("h2", { text: "我的任务" }), el("p", { text: "指派给你、尚未归档的卡片。" }))),
-    ...groups.map(([title, cards]) => el("div", { class: "section task-group" }, el("h3", { text: title }), cards.length ? el("div", { class: "task-list" }, ...cards.map(taskRow)) : el("p", { class: "muted", text: "没有" }))),
+  return el("section", { class: "tasks-page" },
+    el("div", { class: "page-head" }, el("div", {}, el("h2", { text: "我的任务" }), el("p", { text: `指派给你的卡片 · ${pending.length} 项待完成 · ${completed.length} 项已完成` }))),
+    ...groups.map(([title, cards]) => el("section", { class: "task-group" }, el("h3", {}, title, el("span", { class: "count", text: cards.length })), cards.length ? el("div", { class: "task-list" }, ...cards.map(taskRow)) : el("p", { class: "task-empty muted", text: "暂无任务" }))),
+    completed.length ? el("details", { class: "task-group tasks-completed" }, el("summary", {}, "已完成", el("span", { class: "count", text: completed.length })), el("div", { class: "task-list" }, ...completed.map(taskRow))) : null,
   );
 }
 
@@ -768,17 +863,18 @@ function taskRow(card) {
   const due = dueInfo(card.due_on);
   const mark = el("i", { class: "task-mark" });
   mark.style.setProperty("--c", safeColor(card.project_color));
-  return el("button", { class: "task", "data-act": "open-task", "data-id": card.id, "data-project": card.project_id },
+  return el("button", { class: card.done ? "task is-done" : "task", "data-act": "open-task", "data-id": card.id, "data-project": card.project_id },
     mark,
-    el("span", { class: "task-main" }, el("strong", { text: card.title }), el("span", { class: "muted", text: `${card.project_name} · ${card.column_name}` })),
-    due ? el("span", { class: due.over ? "due is-over" : due.today ? "due is-today" : "muted", text: due.text }) : null,
+    el("span", { class: "task-main" }, el("strong", { text: card.title }), card.priority !== "none" ? el("span", { class: `task-priority prio-mark prio-${card.priority}`, text: priorityLabel(card.priority) }) : null),
+    el("span", { class: "task-context" }, el("span", { text: card.project_name }), el("small", { text: card.column_name })),
+    el("span", { class: !card.done && due?.over ? "due-slot due is-over" : !card.done && due?.today ? "due-slot due is-today" : "due-slot muted", text: card.done ? "已完成" : due?.text || "未设日期" }),
   );
 }
 
 function notesView() {
-  return el("section", {},
+  return el("section", { class: "notes-page" },
     el("div", { class: "page-head" },
-      el("div", {}, el("h2", { text: "通知" }), el("p", { text: "邀请需要你批准后才会加入项目。" })),
+      el("div", {}, el("h2", { text: "通知" }), el("p", {}, el("span", { "data-unread-count": "1", text: `${state.unread} 条未读` }), " · 邀请需要你批准后才会加入项目。")),
       el("button", { class: "btn-ghost", "data-act": "read-all", text: "全部已读" }),
     ),
     state.notes.length ? el("div", { class: "note-list" }, ...state.notes.map(noteRow)) : emptyState("没有新消息"),
@@ -802,13 +898,36 @@ function noteRow(note) {
 
 function activityList(items) {
   if (!items?.length) return el("p", { class: "muted", text: "还没有动态" });
-  return el("div", { class: "timeline" }, ...items.map((item) => el("div", { class: "tl-item" },
+  return el("div", { class: "timeline" }, ...groupActivity(items).map((group) => {
+    if (group.length === 1) return activityRow(group[0]);
+    const first = group[0];
+    return el("details", { class: "activity-group", "data-activity-group": first.id, open: state.activityExpanded.has(first.id) },
+      el("summary", {}, el("strong", { text: first.user.display_name }), ` 进行了 ${group.length} 项操作`, el("span", { class: "muted", text: relative(first.created_at) })),
+      ...group.map(activityRow),
+    );
+  }));
+}
+
+function activityRow(item) {
+  return el("div", { class: item.action.startsWith("comment.") ? "tl-item activity-comment" : "tl-item" },
     el("i", { class: "tl-dot" }),
     el("div", {},
       el("div", { class: "tl-text" }, el("strong", { text: item.user?.display_name || "有人" }), " ", ACTIONS[item.action] || item.action, item.detail?.title ? `「${item.detail.title}」` : ""),
+      item.action === "comment.added" ? el("p", { class: "activity-comment-body", text: item.detail?.body ?? (item.detail?.comment_status === "deleted" ? "评论已删除" : "这条历史动态未记录评论内容") }) : null,
       el("div", { class: "muted", text: relative(item.created_at) }),
     ),
-  )));
+  );
+}
+
+function projectActivityPanel() {
+  return el("aside", { class: "project-activity", "aria-label": "项目动态" },
+    el("header", { class: "project-activity-head" }, el("h3", { text: "项目动态" }), el("span", { class: "muted", text: "最近 80 条" })),
+    el("div", { class: "project-activity-feed" },
+      state.activityStatus === "loading" ? el("p", { class: "muted", text: "正在加载动态…" }) : null,
+      state.activityStatus === "error" ? el("button", { class: "btn-ghost", "data-act": "refresh-activity", text: "动态加载失败，点击重试" }) : null,
+      state.activityStatus !== "loading" ? activityList(state.projectActivity) : null,
+    ),
+  );
 }
 
 function settingsView() {
@@ -817,8 +936,8 @@ function settingsView() {
   const admin = canAdmin(data.role);
   const owner = data.role === "owner";
   return el("section", { class: "settings-grid" },
+    el("div", { class: "page-head project-settings-head", style: `--project-color: ${safeColor(data.project.color)}` }, el("div", { class: "project-settings-title" }, projectMark(data.project), el("div", {}, el("h2", { text: "项目设置" }), el("p", { text: data.project.name }))), el("button", { class: "btn-ghost", "data-act": "open-project", "data-id": data.project.id, text: "返回看板" })),
     el("div", { class: "settings-main" },
-      el("div", { class: "page-head" }, el("div", {}, el("h2", { text: "项目设置" }), el("p", { text: data.project.name }))),
       el("div", { class: "settings-block" },
         el("h3", { text: "常规" }),
         admin ? el("form", { "data-form": "project-save" },
@@ -914,6 +1033,7 @@ function paintDrawer() {
   const edit = card.can_edit;
   const saved = {
     panel: drawer.querySelector(".drawer-panel")?.scrollTop || 0,
+    content: drawer.querySelector(".drawer-content")?.scrollTop || 0,
     side: drawer.querySelector(".drawer-side")?.scrollTop || 0,
     desc: drawer.querySelector(".desc-input, .section-desc .md")?.scrollTop || 0,
   };
@@ -929,12 +1049,24 @@ function paintDrawer() {
           el("span", { class: "crumb", text: [state.board?.project?.name, columnName(card.column_id)].filter(Boolean).join(" / ") }),
           el("button", { class: "icon-btn", "data-act": "close-drawer", "aria-label": "关闭" }, glyph("close")),
         ),
-        edit ? el("input", { class: "drawer-title", "data-save": "title", value: card.title, "aria-label": "标题" }) : el("h2", { class: "drawer-title", text: card.title }),
+        edit ? el("textarea", { class: "drawer-title", "data-save": "title", rows: "1", text: card.title, "aria-label": "标题" }) : el("h2", { class: "drawer-title", text: card.title }),
       ),
       el("div", { class: "drawer-body" },
-        el("div", { class: "section section-desc" },
-          el("h3", { text: "描述" }),
-          edit ? el("textarea", { class: "desc-input", "data-save": "description", text: card.description || "", "aria-label": "描述" }) : markdown(card.description || "没有描述"),
+        el("div", { class: "drawer-content" },
+          el("div", { class: "section section-desc" },
+            el("h3", { text: "描述" }),
+            edit ? el("textarea", { class: "desc-input", "data-save": "description", text: card.description || "", "aria-label": "描述" }) : markdown(card.description || "没有描述"),
+          ),
+          el("div", { class: "section" }, el("h3", { text: "清单" }), ...data.checklists.map(checklistBlock), edit ? el("form", { "data-form": "checklist", class: "composer" }, el("input", { name: "title", placeholder: "清单标题", required: true }), el("button", { class: "btn-tiny", text: "添加" })) : null),
+          attachmentSection(data.attachments, edit),
+          el("div", { class: "section" },
+            el("h3", { text: "评论" }),
+            ...data.comments.map((comment) => el("article", { class: "comment" },
+              el("header", {}, comment.user ? avatar(comment.user) : null, el("strong", { text: comment.user?.display_name || "成员" }), el("span", { class: "muted", text: relative(comment.created_at) + (comment.edited ? " · 已编辑" : "") }), comment.mine ? el("button", { type: "button", class: "icon-btn icon-btn-sm check-remove", "data-act": "delete-comment", "data-id": comment.id, "aria-label": "删除评论" }, glyph("trash")) : null),
+              el("p", { text: comment.body }),
+            )),
+            edit ? el("form", { "data-form": "comment", class: "comment-form" }, el("textarea", { name: "body", placeholder: "写评论，用 @显示名 提及成员", required: true }), el("button", { class: "btn-primary btn-tiny", text: "发送" })) : null,
+          ),
         ),
         el("div", { class: "drawer-side" },
           el("div", { class: "props" },
@@ -976,16 +1108,6 @@ function paintDrawer() {
             button.style.setProperty("--c", safeColor(label.color));
             return button;
           })), edit ? el("form", { "data-form": "label", class: "composer" }, el("input", { name: "name", placeholder: "新标签", required: true }), el("button", { class: "btn-tiny", text: "添加" })) : null),
-          el("div", { class: "section" }, el("h3", { text: "清单" }), ...data.checklists.map(checklistBlock), edit ? el("form", { "data-form": "checklist", class: "composer" }, el("input", { name: "title", placeholder: "清单标题", required: true }), el("button", { class: "btn-tiny", text: "添加" })) : null),
-          el("div", { class: "section" }, el("h3", { text: "附件" }), ...data.attachments.map(fileRow), edit ? el("input", { class: "file-input", type: "file", "data-act": "upload" }) : null),
-          el("div", { class: "section" },
-            el("h3", { text: "评论" }),
-            ...data.comments.map((comment) => el("article", { class: "comment" },
-              el("header", {}, comment.user ? avatar(comment.user) : null, el("strong", { text: comment.user?.display_name || "成员" }), el("span", { class: "muted", text: relative(comment.created_at) + (comment.edited ? " · 已编辑" : "") }), comment.mine ? el("button", { type: "button", class: "icon-btn icon-btn-sm check-remove", "data-act": "delete-comment", "data-id": comment.id, "aria-label": "删除评论" }, glyph("trash")) : null),
-              el("p", { text: comment.body }),
-            )),
-            edit ? el("form", { "data-form": "comment", class: "comment-form" }, el("textarea", { name: "body", placeholder: "写评论，用 @显示名 提及成员", required: true }), el("button", { class: "btn-primary btn-tiny", text: "发送" })) : null,
-          ),
           el("div", { class: "section" }, el("h3", { text: "动态" }), activityList(data.activity)),
           edit ? el("div", { class: "more-actions" },
             el("button", { class: "btn-ghost", "data-act": "duplicate", text: "复制" }),
@@ -997,9 +1119,11 @@ function paintDrawer() {
     ),
   );
   const panel = drawer.querySelector(".drawer-panel");
+  const content = drawer.querySelector(".drawer-content");
   const side = drawer.querySelector(".drawer-side");
   const desc = drawer.querySelector(".desc-input, .section-desc .md");
   if (panel) panel.scrollTop = saved.panel;
+  if (content) content.scrollTop = saved.content;
   if (side) side.scrollTop = saved.side;
   if (desc) desc.scrollTop = saved.desc;
 }
@@ -1021,10 +1145,37 @@ function checklistBlock(list) {
   );
 }
 
+function attachmentSection(files, edit) {
+  const images = files.filter((file) => file.image);
+  const documents = files.filter((file) => !file.image);
+  return el("div", { class: "section section-attachments" },
+    el("div", { class: "attachment-heading" }, el("h3", { text: "附件" }), el("span", { class: "muted", text: String(files.length) })),
+    images.length ? el("div", { class: "attachment-gallery" }, ...images.map(fileRow)) : null,
+    documents.length ? el("div", { class: "attachment-files" }, ...documents.map(fileRow)) : null,
+    !files.length ? el("p", { class: "muted", text: "暂无附件，可上传图片或文件。" }) : null,
+    edit ? el("input", { class: "file-input", type: "file", "data-act": "upload", "aria-label": "上传附件" }) : null,
+  );
+}
+
 function fileRow(file) {
-  const row = el("div", { class: "attach" });
-  if (file.image) row.append(el("img", { src: `/api/attachments/${file.id}/file`, alt: "" }));
-  row.append(el("div", { class: "attach-meta" }, el("a", { href: `/api/attachments/${file.id}/file`, text: file.filename }), el("span", { class: "muted", text: fileSize(file.size) })));
+  const url = `/api/attachments/${file.id}/file`;
+  const row = el("div", { class: file.image ? "attach attach-image" : "attach" });
+  const linkAttrs = file.image ? { target: "_blank", rel: "noopener" } : { download: file.filename };
+  if (file.image) {
+    const preview = el("a", { class: "attachment-preview", href: url, ...linkAttrs, "aria-label": `查看原图：${file.filename}（新标签页）` });
+    const img = el("img", { src: url, alt: file.filename, loading: "lazy", decoding: "async" });
+    img.addEventListener("error", () => {
+      preview.classList.add("is-unavailable");
+      img.hidden = true;
+      preview.append(el("span", { class: "attachment-fallback", text: "预览暂不可用，点击打开原图" }));
+    }, { once: true });
+    preview.append(img, el("span", { class: "attachment-preview-hint", text: "查看原图 ↗", "aria-hidden": "true" }));
+    row.append(preview);
+  } else {
+    const extension = file.filename.includes(".") ? file.filename.split(".").pop().slice(0, 5).toUpperCase() : "FILE";
+    row.append(el("span", { class: "attachment-type", text: extension, "aria-hidden": "true" }));
+  }
+  row.append(el("div", { class: "attach-meta" }, el("a", { href: url, ...linkAttrs, text: file.filename, title: file.filename }), el("span", { class: "muted", text: `${fileSize(file.size)} · ${file.image ? "图片" : "点击文件名下载"}` })));
   if (state.detail.card.can_edit) row.append(el("button", { type: "button", class: "icon-btn icon-btn-sm check-remove", "data-act": "delete-file", "data-id": file.id, "aria-label": "删除附件" }, glyph("trash")));
   return row;
 }
@@ -1059,6 +1210,9 @@ function paintBadges() {
     const text = state.unread ? String(state.unread) : "";
     if (node.textContent !== text) node.textContent = text;
   });
+  document.querySelectorAll("[data-unread-count]").forEach((node) => {
+    node.textContent = `${state.unread} 条未读`;
+  });
 }
 
 function formData(form) {
@@ -1072,15 +1226,12 @@ async function run(node, fn) {
   try {
     await fn();
   } catch (error) {
-    toast(error.message || "请求失败");
-    if (error.status === 401) {
-      state.user = null;
-      render();
-    }
+    reportError(error);
   } finally {
     if (node) node.disabled = false;
     activeOperations -= 1;
     liveBoard.invalidate();
+    void refreshProjectActivity();
   }
 }
 
@@ -1089,6 +1240,7 @@ function idOf(node) {
 }
 
 const clicks = {
+  "refresh-activity"() { void refreshProjectActivity(); },
   "auth-mode"(node) {
     state.authMode = node.dataset.mode;
     render();
@@ -1323,6 +1475,7 @@ const forms = {
   },
   async "project-save"(data) {
     state.settings = await api(`/api/projects/${state.projectId}`, { method: "PATCH", body: { name: data.name, description: data.description || "", color: state.color } });
+    syncProject(state.settings.project);
     toast("已保存");
     render();
   },
@@ -1488,8 +1641,7 @@ async function reloadBoard() {
   const version = navigationVersion;
   const board = await api(`/api/projects/${state.projectId}/board`);
   if (version !== navigationVersion || state.view !== "board") return;
-  state.board = board;
-  paintCanvas();
+  if (acceptBoard(board)) paintCanvas();
 }
 
 installDrag({

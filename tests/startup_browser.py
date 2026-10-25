@@ -401,6 +401,70 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         await expect(self.page.locator('.grip, .composer, .add-column')).to_have_count(0)
         self.assertFalse(self.errors)
 
+    async def test_deleted_draft_column_migrates_composer_for_local_and_remote_updates(self):
+        for local in (True, False):
+            with self.subTest(local=local):
+                board = await self.mock_board()
+                async def delete_column(route):
+                    removed = board['columns'].pop(1)
+                    for card in removed['cards']:
+                        card['column_id'] = board['columns'][0]['id']
+                        board['columns'][0]['cards'].append(card)
+                    await route.fulfill(json={'column_ids': [c['id'] for c in board['columns']]})
+                await self.page.route('**/api/columns/2', delete_column)
+                await self.open_mock_board()
+                await self.page.locator('.column:nth-child(2) [data-act=compose]').first.click()
+                draft = self.page.locator('.composer input[name=title]')
+                await draft.fill('删除列表后仍保留的草稿')
+                await draft.blur()
+                if local:
+                    await self.page.locator('.column:nth-child(2) [data-act=edit-column]').click()
+                    await self.page.locator('#modal [data-act=delete-column]').click()
+                    await expect(self.page.locator('.column')).to_have_count(5)
+                else:
+                    board['columns'].pop(1)
+                    await self.board_event()
+                await expect(draft).to_have_value('删除列表后仍保留的草稿')
+                await expect(self.page.locator('.composer input[name=column_id]')).to_have_value('1')
+                await self.board_event()
+                await expect(draft).to_have_value('删除列表后仍保留的草稿')
+                await self.page.unroute('**/api/columns/2', delete_column)
+        self.assertFalse(self.errors)
+
+    async def test_deleted_selected_label_clears_filter_and_restores_cards(self):
+        board = await self.mock_board()
+        board['labels'] = [{'id': 1, 'name': '待删除标签', 'color': '#D63A56'}]
+        board['columns'][0]['cards'][0]['label_ids'] = [1]
+        await self.open_mock_board()
+        await self.page.locator('#filter-label').click()
+        await self.page.locator('#filter-label [data-value="1"]').click()
+        await expect(self.page.locator('.card')).to_have_count(1)
+        board['labels'] = []
+        board['columns'][0]['cards'][0]['label_ids'] = []
+        await self.board_event()
+        await expect(self.page.locator('#filter-label .filter-trigger-text')).to_have_text('全部标签')
+        await expect(self.page.locator('#filter-label [data-value=""]')).to_have_attribute('aria-selected', 'true')
+        await expect(self.page.locator('.card')).to_have_count(240)
+        await expect(self.page.locator('[data-filter-lock]')).to_be_hidden()
+        self.assertFalse(self.errors)
+
+    async def test_failed_card_load_releases_sync_without_an_invisible_drawer(self):
+        board = await self.mock_board()
+        await self.open_mock_board()
+        for status in (404, 503):
+            with self.subTest(status=status):
+                async def unavailable(route):
+                    await route.fulfill(status=status, json={'detail': '卡片暂时不可访问'})
+                await self.page.route('**/api/cards/100', unavailable)
+                await self.page.locator('.card').first.click()
+                await expect(self.page.locator('.toast').last).to_have_text('卡片暂时不可访问')
+                await expect(self.page.locator('#drawer')).to_be_hidden()
+                board['columns'][0]['cards'][1]['title'] = f'加载失败后继续同步 {status}'
+                await self.board_event()
+                await expect(self.page.locator('.card-title').nth(1)).to_have_text(f'加载失败后继续同步 {status}')
+                await self.page.unroute('**/api/cards/100', unavailable)
+        self.assertFalse(self.errors)
+
     async def test_notification_badges_disappear_after_reading(self):
         notes = [
             {"id": i, "type": "project_created", "status": None, "read": False,

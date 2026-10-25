@@ -11,21 +11,20 @@ export function createBoardSync({ load, apply, isBusy, onUnauthorized, onUnavail
   let paused = false;
 
   function schedule(delay = 120) {
-    clearTimeout(timer);
-    if (projectId && !paused) timer = setTimeout(flush, delay);
+    if (timer || !projectId || paused) return;
+    timer = setTimeout(() => { timer = 0; flush(); }, delay);
   }
 
   function refresh() {
     if (!projectId) return;
     dirty = true;
-    pending = null;
     schedule();
   }
 
   async function flush() {
     if (!projectId || paused) return;
     if (isBusy()) { schedule(250); return; }
-    if (pending && !dirty) {
+    if (pending) {
       const board = pending;
       pending = null;
       apply(board);
@@ -38,7 +37,9 @@ export function createBoardSync({ load, apply, isBusy, onUnauthorized, onUnavail
     try {
       const board = await load(projectId, current.controller.signal);
       if (current !== request || current.revision !== revision) return;
-      if (!dirty) pending = board;
+      // Remote changes request another read; only local writes/navigation
+      // invalidate a completed snapshot through the revision check above.
+      pending = board;
     } catch (error) {
       if (current !== request || current.revision !== revision) return;
       if (error.status === 401) { stop(); onUnauthorized(); }
@@ -103,6 +104,7 @@ export function createBoardSync({ load, apply, isBusy, onUnauthorized, onUnavail
   function stop() {
     disconnect();
     clearTimeout(timer);
+    timer = 0;
     clearTimeout(reconnect);
     projectId = null;
     revision += 1;
@@ -128,6 +130,7 @@ export function createBoardSync({ load, apply, isBusy, onUnauthorized, onUnavail
       request?.controller.abort();
       pending = request = null;
       clearTimeout(timer);
+      timer = 0;
       clearTimeout(reconnect);
       if (paused) disconnect();
       else connect();

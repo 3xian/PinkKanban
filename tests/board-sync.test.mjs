@@ -57,6 +57,33 @@ test('a snapshot arriving during an interaction waits until it ends', async (t) 
   assert.deepEqual(applied, [{ title: 'Remote update' }]);
 });
 
+test('continuous remote changes apply completed snapshots while requesting a follow-up', async (t) => {
+  let resolve;
+  const { sync, streams, applied, calls, tick } = setup(t, () => new Promise((done) => { resolve = done; }));
+  sync.start(1);
+  streams[0].emit('ready');
+  await tick();
+  for (let revision = 1; revision <= 20; revision++) {
+    streams[0].emit('change');
+    resolve({ revision });
+    await tick(0);
+    await tick();
+    assert.equal(applied.at(-1).revision, revision);
+  }
+  assert.equal(calls.length, 21);
+});
+
+test('frequent events do not keep pushing the scheduled refresh into the future', async (t) => {
+  const { sync, streams, applied, calls, tick } = setup(t);
+  sync.start(1);
+  for (let i = 0; i < 100; i++) {
+    streams[0].emit('change');
+    await tick(10);
+  }
+  assert.ok(calls.length > 0);
+  assert.ok(applied.length > 0);
+});
+
 test('local writes invalidate an older in-flight snapshot', async (t) => {
   const pending = [];
   const { sync, streams, applied, tick } = setup(t, () => new Promise((resolve) => pending.push(resolve)));

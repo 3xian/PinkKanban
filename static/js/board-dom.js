@@ -59,7 +59,7 @@ function visibleItems(scroller, selector, axis) {
 
 function captureScroll(page) {
   const view = page.closest(".view");
-  return [view, ...page.querySelectorAll(".board-canvas, .column-cards")].filter(Boolean).map((node) => ({
+  return [view, ...page.querySelectorAll(".board-canvas, .column-cards, .project-activity-feed")].filter(Boolean).map((node) => ({
     node, top: node.scrollTop, left: node.scrollLeft,
     vertical: node.scrollHeight > node.clientHeight
       ? visibleItems(node, '[data-drag="card"]', "top") : [],
