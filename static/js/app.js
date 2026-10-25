@@ -9,6 +9,7 @@ import { updateBoardDOM } from "./board-dom.js";
 import { createBoardSync } from "./board-sync.js";
 import { groupActivity } from "./activity.js";
 import { createColumnScrollCues } from "./column-scroll.js";
+import { createActivityLayout } from "./activity-layout.js";
 import { cardCreateFields } from "./card-create.js";
 
 window.kanbanGestures = Object.freeze({ canPullRefreshAt });
@@ -45,6 +46,7 @@ const state = {
 
 const app = document.getElementById("app");
 const refreshColumnScrollCues = createColumnScrollCues(app);
+const refreshActivityLayout = createActivityLayout(app);
 const drawer = document.getElementById("drawer");
 const modal = document.getElementById("modal");
 const toasts = document.getElementById("toasts");
@@ -294,6 +296,7 @@ async function refreshProjectActivity() {
   if (panel) {
     const scroll = panel.querySelector(".project-activity-feed")?.scrollTop || 0;
     updateBoardDOM(panel, projectActivityPanel());
+    refreshActivityLayout();
     panel.querySelector(".project-activity-feed").scrollTop = scroll;
   }
 }
@@ -364,6 +367,7 @@ function render() {
   document.querySelector('meta[name="theme-color"]')?.setAttribute("content", "#f7f6f9");
   app.replaceChildren(authed ? shell() : authView());
   refreshColumnScrollCues();
+  refreshActivityLayout();
   if (!authed) startAuthMotion(app.querySelector(".auth"));
   paintBadges();
   if (state.cardId) paintDrawer();
@@ -764,6 +768,7 @@ function paintCanvas() {
   if (!page || !state.board) return;
   updateBoardDOM(page, boardView());
   refreshColumnScrollCues();
+  refreshActivityLayout();
 }
 
 function columnNode(column) {
