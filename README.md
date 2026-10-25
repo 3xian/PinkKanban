@@ -11,6 +11,7 @@
 ## 功能与权限
 
 - **看板协作**：列表与卡片拖拽排序、WIP 提示、项目归档与恢复。
+- **实时同步**：通过 SSE 接收看板变化通知，局部更新卡片、列表与项目信息；保留滚动、阅读位置和草稿，输入、拖拽与文字选择期间延后同步，断线后自动恢复。
 - **任务跟进**：Markdown 描述、优先级、截止日期、主负责人、参与人、标签、清单、完成标记、归档与复制。
 - **集中沟通**：卡片评论、附件、项目与卡片活动记录；站内邀请和通知。
 - **快速定位**：关键词、我的、延期、标签、优先级、完成状态与归档筛选；跨项目「我的任务」。
@@ -133,7 +134,8 @@ curl http://127.0.0.1:8000/api/health
 - **限制数据库暴露**：Compose 的 `3307:3306` 未限定监听地址。生产环境应将数据库限制在本机或私有网络，不直接暴露公网。
 - **使用 HTTPS**：由反向代理提供 HTTPS，设置 `APP_SECURE_COOKIE=1`；本地启动命令仅监听 `127.0.0.1`。
 - **配置发信服务**：SMTP 是注册流程的必要条件，不能以测试捕获模式代替。
-- **保持单 worker / 单实例假设**：接口限流在进程内存中计数，多 worker 或多副本不会共享计数；扩展前需使用共享限流存储。
+- **保持单 worker / 单实例假设**：接口限流与 SSE 看板通知订阅均保存在进程内存中，多 worker 或多副本不会共享；扩展前需接入共享限流存储与发布订阅通道。
+- **允许 SSE 长连接**：`/api/projects/{id}/events` 返回 `X-Accel-Buffering: no` 禁用 nginx 响应缓冲，每 15 秒发送心跳。其他代理也需关闭事件流缓冲并允许持续连接。前端连接正常时不定时读取看板；连接异常时每 15 秒读取作为降级，重连后获取最新快照补齐离线变化。
 - **持久化与备份**：数据库在 `kanban_db` 卷，附件在仓库 `uploads/`。两者都需备份；附件目录需可写，容器重建或多副本部署需持久化 / 共享存储。
 
 启动会检查数据库，必要时尝试 `CREATE DATABASE`，再通过 `create_all` 创建缺失表。**`create_all` 不会修改已有表结构**；当前启动升级会为 `cards` 补充可空的 `responsible_user_id` 列、索引和外键，为 `users` 补充可空的 `avatar_id` 列，保留已有数据。数据库账号需有相应 DDL 权限；升级前备份，更新后重启后端。使用名为 `pinkkanban.service` 的 systemd 服务时，重启该服务。
@@ -195,6 +197,8 @@ Windows 使用 `.venv\Scripts\python.exe -m pytest`。
 
 凭证回归测试使用独立内存 SQLite，不连接 MariaDB：`python -m pytest tests/test_tokens.py -q`。覆盖摘要存储、仅创建时返回明文、Bearer 读写、凭证管理的 Cookie 限制、跨用户撤销隔离、项目权限、有限期过期与无限期持续有效、撤销失效、认证优先级及输入边界。
 
+SSE 回归使用临时 SQLite 与本机 HTTP 服务，不连接 MariaDB：`python -m pytest tests/test_live.py -q`。覆盖事务提交后通知、回滚不通知、项目隔离、标签与头像变化、订阅清理及成员权限撤销。数据库依赖使用 FastAPI 0.121 起支持的 function scope，确保事务提交后才返回成功响应与发送通知。
+
 ### 前端与浏览器回归
 
 前端测试需要 Node.js（CI 使用 24），不影响日常运行：
@@ -203,16 +207,15 @@ Windows 使用 `.venv\Scripts\python.exe -m pytest`。
 node --test tests/*.test.mjs
 ```
 
-浏览器回归是独立脚本，不由 pytest 自动收集。额外安装 Playwright 与 Chromium，通过 `CHROMIUM_PATH` 指定浏览器可执行文件：
+浏览器回归是独立脚本，不由 pytest 自动收集。额外安装 Playwright 与 Chromium，默认使用 Playwright 安装的 Chromium，也可通过 `CHROMIUM_PATH` 指定浏览器可执行文件：
 
 ```bash
 python -m pip install playwright
 python -m playwright install chromium
-# 将 CHROMIUM_PATH 设置为本机 Chromium 可执行文件路径后运行：
 python tests/startup_browser.py
 ```
 
-脚本只使用本地静态服务器与模拟 API，不访问数据库。模拟响应按端点遵守真实 API 契约，未声明的端点返回 404，不以项目列表响应代替其他接口；启动期间切换账号页的回归会等待凭证列表加载完成后再验证返回导航。Android 构建、QA 服务与设备验收见 [Android README](android/README.md)。GitHub Actions 的 [CI](.github/workflows/ci.yml) 执行后端、网页、浏览器、QA 边界检查及 Android 构建检查；[发布流程](.github/workflows/release.yml)负责签名 APK，不部署服务器。
+脚本只使用本地静态服务器与模拟 API、SSE 通知，不访问数据库。覆盖启动恢复、账号与头像、通知，以及桌面和手机看板的节点保留、连续更新、阅读位置、草稿与交互保护。模拟响应按端点遵守真实 API 契约，未声明的端点返回 404，不以项目列表响应代替其他接口；启动期间切换账号页的回归会等待凭证列表加载完成后再验证返回导航。Android 构建、QA 服务与设备验收见 [Android README](android/README.md)。GitHub Actions 的 [CI](.github/workflows/ci.yml) 执行后端、网页、浏览器、QA 边界检查及 Android 构建检查；[发布流程](.github/workflows/release.yml)负责签名 APK，不部署服务器。
 
 ## API
 
@@ -257,6 +260,7 @@ curl https://kanban.faweisi.com/api/projects \
 | GET / POST | `/api/auth/tokens` | 凭证列表 / 创建；创建体为 `{"name":"我的 Agent","expires_in_days":30}`；设为 `null` 表示永不过期，返回的 `expires_at` 也为 `null`；只有创建响应含 `token` |
 | DELETE | `/api/auth/tokens/{id}` | 撤销自己的凭证 |
 | GET | `/api/bootstrap` | 用户、项目列表、未读数、配额 |
+| GET | `/api/projects/{id}/events` | SSE 看板变化通知；需项目访问权限，连接建立或重连发送 `ready`，提交变化发送 `change`，失去权限发送 `unavailable` 后关闭；通知不包含业务数据 |
 | GET / POST | `/api/projects` | 项目列表 / 新建；`?archived=true` 查看归档 |
 | GET / PATCH / DELETE | `/api/projects/{id}` | 详情 / 修改 / 删除 |
 | POST | `/api/projects/{id}/archive`、`restore`、`transfer`、`leave` | 归档、恢复、移交、退出 |

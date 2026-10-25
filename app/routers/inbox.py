@@ -26,7 +26,7 @@ router = APIRouter(prefix="/api", tags=["inbox"])
 
 
 @router.get("/bootstrap")
-def bootstrap(user: User = Depends(current_user), db: Session = Depends(get_db)):
+def bootstrap(user: User = Depends(current_user), db: Session = Depends(get_db, scope="function")):
     return {
         "user": profile(user),
         "projects": list_projects(db, user, archived=False),
@@ -36,40 +36,40 @@ def bootstrap(user: User = Depends(current_user), db: Session = Depends(get_db))
 
 
 @router.get("/notifications")
-def notifications(user: User = Depends(current_user), db: Session = Depends(get_db)):
+def notifications(user: User = Depends(current_user), db: Session = Depends(get_db, scope="function")):
     return notification_list(db, user)
 
 
 @router.post("/notifications/{note_id}/read")
-def read_one(note_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def read_one(note_id: int, user: User = Depends(current_user), db: Session = Depends(get_db, scope="function")):
     mark_read(db, note_id, user)
     return {"ok": True}
 
 
 @router.post("/notifications/read-all")
-def read_every(user: User = Depends(current_user), db: Session = Depends(get_db)):
+def read_every(user: User = Depends(current_user), db: Session = Depends(get_db, scope="function")):
     return {"ok": True, "count": read_all(db, user)}
 
 
 @router.post("/notifications/{note_id}/accept")
-def accept(note_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def accept(note_id: int, user: User = Depends(current_user), db: Session = Depends(get_db, scope="function")):
     note = accept_invite(db, note_id, user)
     return {"ok": True, "project_id": note.project_id}
 
 
 @router.post("/notifications/{note_id}/reject")
-def reject(note_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def reject(note_id: int, user: User = Depends(current_user), db: Session = Depends(get_db, scope="function")):
     reject_invite(db, note_id, user)
     return {"ok": True}
 
 
 @router.get("/me/cards")
-def cards(q: str = "", user: User = Depends(current_user), db: Session = Depends(get_db)):
+def cards(q: str = "", user: User = Depends(current_user), db: Session = Depends(get_db, scope="function")):
     return {"cards": my_cards(db, user, q)}
 
 
 @router.get("/users/lookup")
-def lookup(request: Request, email: str = Query(min_length=3), user: User = Depends(current_user), db: Session = Depends(get_db)):
+def lookup(request: Request, email: str = Query(min_length=3), user: User = Depends(current_user), db: Session = Depends(get_db, scope="function")):
     limit(request, f"lookup:{user.id}", 30, 60)
     try:
         normalized = clean_email(email)

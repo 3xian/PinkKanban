@@ -43,7 +43,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         cls.server.server_close()
     async def asyncSetUp(self):
         self.pw = await async_playwright().start()
-        self.browser = await self.pw.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH', '/usr/bin/chromium'), headless=True, args=['--no-sandbox'])
+        self.browser = await self.pw.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH', self.pw.chromium.executable_path), headless=True, args=['--no-sandbox'])
         self.page = await self.browser.new_page(reduced_motion='reduce')
         self.errors = []
         self.page.on('pageerror', lambda err: self.errors.append(str(err)))
@@ -179,6 +179,226 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         await self.page.get_by_role('button', name='橘猫', exact=True).click()
         await self.page.get_by_role('button', name='保存', exact=True).click()
         await expect(self.page.locator('.account-id img')).to_have_attribute('src', '/static/avatars/pet-1.webp?v=1')
+        self.assertFalse(self.errors)
+
+    async def mock_board(self):
+        await self.page.add_init_script('''
+            window.boardStreams = [];
+            window.EventSource = class extends EventTarget {
+                static CLOSED = 2;
+                readyState = 1;
+                constructor(url) {
+                    super(); this.url = url; window.boardStreams.push(this);
+                    queueMicrotask(() => this.emit('ready'));
+                }
+                emit(name) { this.dispatchEvent(new Event(name)); }
+                close() { this.readyState = 2; }
+            };
+        ''')
+        board = {
+            'project': {'id': 1, 'name': '滚动测试', 'archived': False},
+            'role': 'owner', 'members': [], 'labels': [],
+            'columns': [
+                {'id': column_id, 'name': f'列表 {column_id}', 'color': '#7A5EA8',
+                 'wip_limit': None, 'cards': [
+                     {'id': column_id * 100 + i, 'title': f'任务 {i}',
+                      'column_id': column_id, 'priority': 'none', 'due_on': None,
+                      'done': False, 'archived': False, 'assignee_ids': [], 'label_ids': [],
+                      'checklist': {'done': 0, 'total': 0},
+                      'comment_count': 0, 'attachment_count': 0}
+                     for i in range(40)
+                 ]}
+                for column_id in range(1, 7)
+            ],
+        }
+        self.board_requests = 0
+        async def fetch_board(route):
+            self.board_requests += 1
+            await route.fulfill(json=board)
+        await self.page.route('**/api/projects/1/board', fetch_board)
+        await self.page.route('**/api/notifications', lambda r: r.fulfill(json={'items': [], 'unread': 0}))
+        await self.page.clock.install()
+        return board
+
+    async def board_event(self, name='change'):
+        async with self.page.expect_response('**/api/projects/1/board'):
+            await self.page.evaluate('(name) => window.boardStreams.at(-1).emit(name)', name)
+            await self.page.clock.run_for(500)
+        await self.page.clock.run_for(500)
+
+    async def open_mock_board(self, width=1280, height=800):
+        await self.page.set_viewport_size({'width': width, 'height': height})
+        url = self.url + '/#/board/1'
+        if self.page.url == url:
+            await self.page.reload()
+        else:
+            await self.page.goto(url)
+        await self.page.locator('#board-canvas').wait_for()
+        await self.page.clock.run_for(1000)
+
+    async def test_board_events_preserve_nodes_and_scroll_on_desktop_and_mobile(self):
+        board = await self.mock_board()
+        positions = '''() => {
+            const canvas = document.querySelector('#board-canvas');
+            const view = document.querySelector('.view');
+            return {
+                page: [view.scrollLeft, view.scrollTop],
+                canvas: [canvas.scrollLeft, canvas.scrollTop],
+                columns: Object.fromEntries(Array.from(canvas.querySelectorAll('[data-drop-column]'), column => [
+                    column.dataset.dropColumn, column.querySelector('.column-cards').scrollTop
+                ])),
+            };
+        }'''
+        for width, height in ((1280, 800), (390, 844)):
+            with self.subTest(width=width):
+                board['columns'][0]['cards'][0]['title'] = '任务 0'
+                await self.open_mock_board(width, height)
+                await self.page.evaluate('''() => {
+                    const canvas = document.querySelector('#board-canvas');
+                    canvas.scrollLeft = canvas.querySelector('.column').offsetWidth + 16;
+                    canvas.scrollTop = 250;
+                    document.querySelector('.view').scrollTop = 600;
+                    canvas.querySelectorAll('.column-cards').forEach((body, i) => body.scrollTop = 200 + i * 100);
+                }''')
+                await self.page.clock.run_for(200)
+                before = await self.page.evaluate(positions)
+                self.assertGreater(before['canvas'][0], 0)
+                if width > 900:
+                    self.assertTrue(all(top > 0 for top in before['columns'].values()))
+                else:
+                    self.assertGreater(before['page'][1] + before['canvas'][1], 0)
+                await self.page.evaluate('''() => {
+                    window.originalCanvas = document.querySelector('#board-canvas');
+                    window.originalCards = Array.from(document.querySelectorAll('.card'));
+                    window.boardMutations = [];
+                    new MutationObserver(records => boardMutations.push(...records))
+                        .observe(document.querySelector('.board-page'), {subtree: true, childList: true, attributes: true, characterData: true});
+                }''')
+                # Identical snapshots don't mutate the DOM; changed cards keep their nodes.
+                for updated in (False, True):
+                    if updated:
+                        board['columns'][0]['cards'][0]['title'] = '任务已更新'
+                    await self.board_event()
+                    await expect(self.page.locator('.card-title').first).to_have_text(board['columns'][0]['cards'][0]['title'])
+                    self.assertEqual(await self.page.evaluate(positions), before)
+                    self.assertTrue(await self.page.evaluate('originalCanvas === document.querySelector("#board-canvas") && originalCards.every(node => node.isConnected)'))
+                    if not updated:
+                        self.assertEqual(await self.page.evaluate('boardMutations.map(record => ({type: record.type, target: record.target.parentElement?.outerHTML.slice(0, 250)}))'), [])
+                requests_before = self.board_requests
+                await self.page.clock.fast_forward(24000)
+                self.assertEqual(self.board_requests, requests_before)
+        self.assertFalse(self.errors)
+
+    async def test_board_preserves_reading_anchor_on_insert_and_delete(self):
+        board = await self.mock_board()
+        for width, height in ((1280, 800), (390, 844)):
+            with self.subTest(width=width):
+                await self.open_mock_board(width, height)
+                await self.page.evaluate('''() => {
+                    document.querySelector('.column-cards').scrollTop = 650;
+                    document.querySelector('.view').scrollTop = 900;
+                }''')
+                await self.page.clock.run_for(300)
+                anchor = await self.page.evaluate('''() => {
+                    const view = document.querySelector('.view').getBoundingClientRect();
+                    const body = document.querySelector('.column-cards').getBoundingClientRect();
+                    const cards = Array.from(document.querySelectorAll('.column:first-child .card'));
+                    window.readingCard = cards.find(card => card.getBoundingClientRect().bottom > Math.max(view.top, body.top));
+                    return {id: Number(readingCard.dataset.id), top: readingCard.getBoundingClientRect().top};
+                }''')
+                inserted = {**board['columns'][0]['cards'][0], 'id': 99999, 'title': '新插入的卡片'}
+                board['columns'][0]['cards'].insert(0, inserted)
+                await self.board_event()
+                self.assertTrue(await self.page.evaluate('readingCard.isConnected'))
+                self.assertAlmostEqual(await self.page.evaluate('readingCard.getBoundingClientRect().top'), anchor['top'], delta=1)
+                board['columns'][0]['cards'].remove(inserted)
+                await self.board_event()
+                self.assertAlmostEqual(await self.page.evaluate('readingCard.getBoundingClientRect().top'), anchor['top'], delta=1)
+                # If the reading card itself disappears, anchor the next surviving card.
+                next_top = await self.page.evaluate('''() => {
+                    window.nextCard = readingCard.nextElementSibling;
+                    return nextCard.getBoundingClientRect().top;
+                }''')
+                removed = next(card for card in board['columns'][0]['cards'] if card['id'] == anchor['id'])
+                board['columns'][0]['cards'].remove(removed)
+                await self.board_event()
+                self.assertAlmostEqual(await self.page.evaluate('nextCard.getBoundingClientRect().top'), next_top, delta=1)
+        self.assertFalse(self.errors)
+
+    async def test_board_defers_changes_during_edit_selection_and_pointer_hold(self):
+        board = await self.mock_board()
+        await self.open_mock_board()
+        title = self.page.locator('.card-title').first
+        search = self.page.locator('#board-search')
+        await search.fill('任务')
+        await search.evaluate('(node) => node.setSelectionRange(0, 1)')
+        board['columns'][0]['cards'][0]['title'] = '任务已编辑'
+        await self.page.evaluate('boardStreams.at(-1).emit("change")')
+        await self.page.clock.run_for(1000)
+        await expect(title).to_have_text('任务 0')
+        self.assertEqual(await search.evaluate('(node) => node.selectionEnd'), 1)
+        await search.blur()
+        await self.page.clock.run_for(1000)
+        await expect(title).to_have_text('任务已编辑')
+        await self.page.evaluate('''() => {
+            const range = document.createRange();
+            range.selectNodeContents(document.querySelector('.card-title'));
+            getSelection().addRange(range);
+        }''')
+        board['columns'][0]['cards'][0]['title'] = '任务选择期间'
+        await self.page.evaluate('boardStreams.at(-1).emit("change")')
+        await self.page.clock.run_for(1000)
+        await expect(title).to_have_text('任务已编辑')
+        await self.page.evaluate('getSelection().removeAllRanges()')
+        await self.page.clock.run_for(1000)
+        await expect(title).to_have_text('任务选择期间')
+        await self.page.locator('.board-head').dispatch_event('pointerdown', {'pointerId': 9})
+        board['columns'][0]['cards'][0]['title'] = '任务松开后'
+        await self.page.evaluate('boardStreams.at(-1).emit("change")')
+        await self.page.clock.run_for(1000)
+        await expect(title).to_have_text('任务选择期间')
+        await self.page.locator('.board-head').dispatch_event('pointerup', {'pointerId': 9})
+        await self.page.clock.run_for(1000)
+        await expect(title).to_have_text('任务松开后')
+        self.assertFalse(self.errors)
+
+    async def test_board_moves_reuse_nodes_and_metadata_updates_in_place(self):
+        board = await self.mock_board()
+        await self.open_mock_board()
+        await self.page.locator('[data-act="compose"]').first.click()
+        draft = self.page.locator('.composer input[name="title"]')
+        await draft.fill('尚未提交的草稿')
+        await draft.blur()
+        await self.page.evaluate('''() => {
+            window.draftInput = document.querySelector('.composer input[name=title]');
+            window.movingCard = document.querySelector('.card');
+            window.unchangedColumn = document.querySelectorAll('.column')[2];
+        }''')
+        moved = board['columns'][0]['cards'].pop(0)
+        moved['column_id'] = board['columns'][1]['id']
+        board['columns'][1]['cards'].append(moved)
+        board['project']['name'] = '协作项目已改名'
+        board['columns'][1]['name'] = '协作列表已改名'
+        await self.board_event()
+        self.assertTrue(await self.page.evaluate('movingCard === document.querySelector(".column:nth-child(2) .card:last-child")'))
+        self.assertTrue(await self.page.evaluate('draftInput === document.querySelector(".composer input[name=title]")'))
+        self.assertTrue(await self.page.evaluate('unchangedColumn === document.querySelectorAll(".column")[2]'))
+        await expect(draft).to_have_value('尚未提交的草稿')
+        await expect(self.page.locator('.board-heading h2')).to_have_text('协作项目已改名')
+        await expect(self.page.locator('.column-head strong').nth(1)).to_have_text('协作列表已改名')
+        board['labels'] = [
+            {'id': 1, 'name': '需求', 'color': '#D63A56'},
+            {'id': 2, 'name': '缺陷', 'color': '#D63A56'},
+        ]
+        await self.board_event()
+        options = self.page.locator('#filter-label .filter-item')
+        await expect(options).to_have_text(['全部标签', '需求', '缺陷'])
+        board['labels'] = [{'id': 2, 'name': '待修复', 'color': '#D63A56'}]
+        await self.board_event()
+        await expect(options).to_have_text(['全部标签', '待修复'])
+        board['role'] = 'viewer'
+        await self.board_event()
+        await expect(self.page.locator('.grip, .composer, .add-column')).to_have_count(0)
         self.assertFalse(self.errors)
 
     async def test_notification_badges_disappear_after_reading(self):

@@ -9,6 +9,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import database_url
+from app.live import PENDING_BOARDS, board_events
 
 _engine = None
 _session_factory = None
@@ -71,11 +72,13 @@ def defer_unlink(db: Session, path: Path) -> None:
 
 
 def get_db() -> Iterator[Session]:
+    # Routes use function scope: commit and publish before sending a success response.
     db = session_factory()()
     try:
         yield db
         paths = list(db.info.get(_UNLINKS, []))
         db.commit()
+        board_events.publish(db.info.pop(PENDING_BOARDS, set()))
         for path in paths:
             path.unlink(missing_ok=True)
     except Exception:

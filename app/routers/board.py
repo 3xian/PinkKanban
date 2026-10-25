@@ -68,171 +68,171 @@ router = APIRouter(prefix="/api", tags=["board"])
 
 
 @router.get("/projects/{project_id}/board")
-def board(project_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def board(project_id: int, user: User = Depends(current_user), db: Session = Depends(get_db, scope="function")):
     return board_dict(db, project_id, user)
 
 
 @router.post("/projects/{project_id}/columns")
-def add_column(project_id: int, body: ColumnIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def add_column(project_id: int, body: ColumnIn, user: User = Depends(current_user), db: Session = Depends(get_db, scope="function")):
     column = create_column(db, project_id, user, body.name, body.color, body.wip_limit)
     return column_dict(column)
 
 
 @router.patch("/columns/{column_id}")
-def patch_column(column_id: int, body: ColumnPatch, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def patch_column(column_id: int, body: ColumnPatch, user: User = Depends(current_user), db: Session = Depends(get_db, scope="function")):
     column = update_column(db, column_id, user, body.model_dump(exclude_unset=True))
     return column_dict(column)
 
 
 @router.delete("/columns/{column_id}")
-def remove_column(column_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def remove_column(column_id: int, user: User = Depends(current_user), db: Session = Depends(get_db, scope="function")):
     return delete_column(db, column_id, user)
 
 
 @router.post("/projects/{project_id}/columns/reorder")
-def order_columns(project_id: int, body: ReorderIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def order_columns(project_id: int, body: ReorderIn, user: User = Depends(current_user), db: Session = Depends(get_db, scope="function")):
     return reorder_columns(db, project_id, user, body.ids)
 
 
 @router.post("/projects/{project_id}/cards")
-def add_card(project_id: int, body: CardIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def add_card(project_id: int, body: CardIn, user: User = Depends(current_user), db: Session = Depends(get_db, scope="function")):
     card = create_card(db, project_id, user, body.column_id, body.title)
     return card_detail(db, card.id, user)["card"]
 
 
 @router.get("/cards/{card_id}")
-def read_card(card_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def read_card(card_id: int, user: User = Depends(current_user), db: Session = Depends(get_db, scope="function")):
     return card_detail(db, card_id, user)
 
 
 @router.patch("/cards/{card_id}")
-def patch_card(card_id: int, body: CardPatch, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def patch_card(card_id: int, body: CardPatch, user: User = Depends(current_user), db: Session = Depends(get_db, scope="function")):
     update_card(db, card_id, user, body.model_dump(exclude_unset=True))
     return card_detail(db, card_id, user)
 
 
 @router.post("/cards/{card_id}/move")
-def move(card_id: int, body: MoveIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def move(card_id: int, body: MoveIn, user: User = Depends(current_user), db: Session = Depends(get_db, scope="function")):
     return move_card(db, card_id, user, body.column_id, body.index)
 
 
 @router.post("/cards/{card_id}/archive")
-def archive_card(card_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def archive_card(card_id: int, user: User = Depends(current_user), db: Session = Depends(get_db, scope="function")):
     set_card_archived(db, card_id, user, True)
     return {"ok": True}
 
 
 @router.post("/cards/{card_id}/restore")
-def restore_card(card_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def restore_card(card_id: int, user: User = Depends(current_user), db: Session = Depends(get_db, scope="function")):
     set_card_archived(db, card_id, user, False)
     return card_detail(db, card_id, user)
 
 
 @router.delete("/cards/{card_id}")
-def remove_card(card_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def remove_card(card_id: int, user: User = Depends(current_user), db: Session = Depends(get_db, scope="function")):
     delete_card(db, card_id, user)
     return {"ok": True}
 
 
 @router.post("/cards/{card_id}/duplicate")
-def copy_card(card_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def copy_card(card_id: int, user: User = Depends(current_user), db: Session = Depends(get_db, scope="function")):
     card = duplicate_card(db, card_id, user)
     return card_detail(db, card.id, user)["card"]
 
 
 @router.post("/projects/{project_id}/labels")
-def add_label(project_id: int, body: LabelIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def add_label(project_id: int, body: LabelIn, user: User = Depends(current_user), db: Session = Depends(get_db, scope="function")):
     return label_dict(create_label(db, project_id, user, body.name, body.color))
 
 
 @router.patch("/labels/{label_id}")
-def patch_label(label_id: int, body: LabelIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def patch_label(label_id: int, body: LabelIn, user: User = Depends(current_user), db: Session = Depends(get_db, scope="function")):
     return label_dict(update_label(db, label_id, user, body.name, body.color))
 
 
 @router.delete("/labels/{label_id}")
-def remove_label(label_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def remove_label(label_id: int, user: User = Depends(current_user), db: Session = Depends(get_db, scope="function")):
     delete_label(db, label_id, user)
     return {"ok": True}
 
 
 @router.put("/cards/{card_id}/labels")
-def labels(card_id: int, body: IdsIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def labels(card_id: int, body: IdsIn, user: User = Depends(current_user), db: Session = Depends(get_db, scope="function")):
     replace_labels(db, card_id, user, body.ids)
     return card_detail(db, card_id, user)
 
 
 @router.put("/cards/{card_id}/assignees")
-def assignees(card_id: int, body: IdsIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def assignees(card_id: int, body: IdsIn, user: User = Depends(current_user), db: Session = Depends(get_db, scope="function")):
     replace_assignees(db, card_id, user, body.ids)
     return card_detail(db, card_id, user)
 
 
 @router.post("/cards/{card_id}/checklists")
-def add_list(card_id: int, body: ChecklistIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def add_list(card_id: int, body: ChecklistIn, user: User = Depends(current_user), db: Session = Depends(get_db, scope="function")):
     return checklist_dict(create_checklist(db, card_id, user, body.title))
 
 
 @router.patch("/checklists/{checklist_id}")
-def patch_list(checklist_id: int, body: ChecklistIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def patch_list(checklist_id: int, body: ChecklistIn, user: User = Depends(current_user), db: Session = Depends(get_db, scope="function")):
     return checklist_dict(update_checklist(db, checklist_id, user, body.title))
 
 
 @router.delete("/checklists/{checklist_id}")
-def remove_list(checklist_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def remove_list(checklist_id: int, user: User = Depends(current_user), db: Session = Depends(get_db, scope="function")):
     delete_checklist(db, checklist_id, user)
     return {"ok": True}
 
 
 @router.post("/checklists/{checklist_id}/items")
-def add_check_item(checklist_id: int, body: ItemIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def add_check_item(checklist_id: int, body: ItemIn, user: User = Depends(current_user), db: Session = Depends(get_db, scope="function")):
     return item_dict(add_item(db, checklist_id, user, body.text))
 
 
 @router.patch("/checklist-items/{item_id}")
-def patch_check_item(item_id: int, body: ItemPatch, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def patch_check_item(item_id: int, body: ItemPatch, user: User = Depends(current_user), db: Session = Depends(get_db, scope="function")):
     return item_dict(update_item(db, item_id, user, body.model_dump(exclude_unset=True)))
 
 
 @router.delete("/checklist-items/{item_id}")
-def remove_check_item(item_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def remove_check_item(item_id: int, user: User = Depends(current_user), db: Session = Depends(get_db, scope="function")):
     delete_item(db, item_id, user)
     return {"ok": True}
 
 
 @router.post("/cards/{card_id}/comments")
-def comment(card_id: int, body: CommentIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def comment(card_id: int, body: CommentIn, user: User = Depends(current_user), db: Session = Depends(get_db, scope="function")):
     add_comment(db, card_id, user, body.body)
     return card_detail(db, card_id, user)
 
 
 @router.patch("/comments/{comment_id}")
-def patch_comment(comment_id: int, body: CommentIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def patch_comment(comment_id: int, body: CommentIn, user: User = Depends(current_user), db: Session = Depends(get_db, scope="function")):
     row = update_comment(db, comment_id, user, body.body)
     return card_detail(db, row.card_id, user)
 
 
 @router.delete("/comments/{comment_id}")
-def remove_comment(comment_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def remove_comment(comment_id: int, user: User = Depends(current_user), db: Session = Depends(get_db, scope="function")):
     delete_comment(db, comment_id, user)
     return {"ok": True}
 
 
 @router.post("/cards/{card_id}/attachments")
-def upload(card_id: int, file: UploadFile = File(...), user: User = Depends(current_user), db: Session = Depends(get_db)):
+def upload(card_id: int, file: UploadFile = File(...), user: User = Depends(current_user), db: Session = Depends(get_db, scope="function")):
     raw = file.file.read()
     row = add_attachment(db, card_id, user, file.filename or "", raw)
     return attachment_dict(row)
 
 
 @router.delete("/attachments/{attachment_id}")
-def remove_file(attachment_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def remove_file(attachment_id: int, user: User = Depends(current_user), db: Session = Depends(get_db, scope="function")):
     delete_attachment(db, attachment_id, user)
     return {"ok": True}
 
 
 @router.get("/attachments/{attachment_id}/file")
-def download(attachment_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def download(attachment_id: int, user: User = Depends(current_user), db: Session = Depends(get_db, scope="function")):
     row = attachment_file(db, attachment_id, user)
     path = (UPLOAD_DIR / row.stored_name).resolve()
     root = UPLOAD_DIR.resolve()

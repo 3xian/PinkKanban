@@ -10,7 +10,7 @@ from app.models import AccessToken, User, utcnow
 from app.security import hash_access_token, read_session
 
 
-def current_user(request: Request, db: Session = Depends(get_db)) -> User:
+def current_user(request: Request, db: Session = Depends(get_db, scope="function")) -> User:
     authorization = request.headers.get("authorization")
     if authorization is not None:
         parts = authorization.split()
@@ -29,7 +29,7 @@ def current_user(request: Request, db: Session = Depends(get_db)) -> User:
     return user
 
 
-def session_user(request: Request, db: Session = Depends(get_db)) -> User:
+def session_user(request: Request, db: Session = Depends(get_db, scope="function")) -> User:
     if "authorization" in request.headers:
         raise HTTPException(403, "请通过网页登录管理凭证")
     return current_user(request, db)

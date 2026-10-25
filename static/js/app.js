@@ -5,6 +5,8 @@ import { ACTIONS, COLORS, PRIORITIES, ROLES, avatar, canAdmin, canEdit, cardFace
 import { icon as glyph } from "./icons.js";
 import { createTokenPanel } from "./tokens.js";
 import { createAvatarPicker } from "./avatar-picker.js";
+import { updateBoardDOM } from "./board-dom.js";
+import { createBoardSync } from "./board-sync.js";
 
 window.kanbanGestures = Object.freeze({ canPullRefreshAt });
 
@@ -40,6 +42,45 @@ const drawer = document.getElementById("drawer");
 const modal = document.getElementById("modal");
 const toasts = document.getElementById("toasts");
 let tokenPanel = null;
+let activeOperations = 0;
+let navigationVersion = 0;
+let lastBoardScroll = -Infinity;
+let boardDay = new Date().toDateString();
+const activePointers = new Set();
+const liveBoard = createBoardSync({
+  load: (id, signal) => api(`/api/projects/${id}/board`, { signal }),
+  apply(board) {
+    const today = new Date().toDateString();
+    if (JSON.stringify(board) === JSON.stringify(state.board) && boardDay === today) return;
+    state.board = board;
+    boardDay = today;
+    if (state.compose && !board.columns.some((column) => column.id === state.compose.columnId)) {
+      state.compose.columnId = board.columns[0]?.id;
+    }
+    paintCanvas();
+  },
+  isBusy: () => activeOperations > 0 || state.dragging || activePointers.size > 0 ||
+    state.modal || state.cardId || document.hidden || performance.now() - lastBoardScroll < 250 ||
+    document.activeElement?.closest('input, textarea, select, [contenteditable="true"]') ||
+    document.querySelector(".filter-trigger.is-open") || window.getSelection()?.isCollapsed === false,
+  onUnauthorized() { state.user = null; render(); },
+  onUnavailable() { toast("项目已不可访问，请重新选择项目"); go("#/projects"); },
+});
+
+document.addEventListener("pointerdown", (event) => activePointers.add(event.pointerId));
+for (const name of ["pointerup", "pointercancel"]) {
+  window.addEventListener(name, (event) => { activePointers.delete(event.pointerId); liveBoard.resume(); });
+}
+window.addEventListener("blur", () => { activePointers.clear(); });
+document.addEventListener("scroll", (event) => {
+  if (event.target.closest?.(".board-page, .view.is-board")) lastBoardScroll = performance.now();
+}, { capture: true, passive: true });
+for (const name of ["focusout", "selectionchange"]) document.addEventListener(name, () => liveBoard.resume());
+document.addEventListener("visibilitychange", () => { activePointers.clear(); liveBoard.visibilityChanged(); });
+window.addEventListener("pagehide", () => liveBoard.stop());
+window.addEventListener("pageshow", (event) => {
+  if (event.persisted && state.user && state.view === "board") liveBoard.start(state.projectId);
+});
 
 function toast(message) {
   const node = el("div", { class: "toast" }, glyph("info"), el("span", { text: message }));
@@ -153,16 +194,12 @@ function applyBootstrap(data) {
 }
 
 async function poll() {
-  if (!state.user || document.hidden || state.dragging) return;
-  if (document.activeElement?.closest("input, textarea, #drawer, #modal")) return;
+  if (!state.user || document.hidden) return;
   try {
     const notes = await api("/api/notifications");
     state.unread = notes.unread;
     paintBadges();
-    if (state.view === "board" && state.projectId) {
-      state.board = await api(`/api/projects/${state.projectId}/board`);
-      paintCanvas();
-    }
+    if (state.view === "board" && boardDay !== new Date().toDateString()) liveBoard.invalidate();
   } catch (error) {
     if (error.status === 401) {
       state.user = null;
@@ -172,13 +209,15 @@ async function poll() {
 }
 
 async function route({ useBootstrap = false } = {}) {
+  const version = ++navigationVersion;
+  liveBoard.stop();
   if (!state.user) {
     render();
     return;
   }
   const [name, id] = (location.hash.replace(/^#\/?/, "") || "projects").split("/");
   if (name !== "account") clearAgentTokens();
-  if (name === "board" && id) return openBoard(Number(id));
+  if (name === "board" && id) return openBoard(Number(id), version);
   if (name === "settings" && id) return openSettings(Number(id));
   if (name === "tasks") return openTasks();
   if (name === "notifications") return openNotes();
@@ -199,16 +238,19 @@ async function loadProjects() {
   state.quota = data.quota;
 }
 
-async function openBoard(id) {
+async function openBoard(id, version) {
   if (state.compose?.projectId !== id) state.compose = null;
   state.projectId = id;
   state.view = "board";
   state.cardId = null;
   drawer.hidden = true;
-  state.board = await api(`/api/projects/${id}/board`);
+  const board = await api(`/api/projects/${id}/board`);
+  if (version !== navigationVersion) return;
+  state.board = board;
   const pending = state.pendingCard;
   state.pendingCard = null;
   render();
+  if (state.view === "board" && state.projectId === id) liveBoard.start(id);
   if (pending && state.view === "board" && state.projectId === id) await openCard(pending);
 }
 
@@ -249,6 +291,7 @@ function closeDrawer() {
 
 function render() {
   const authed = Boolean(state.user);
+  if (!authed) liveBoard.stop();
   if (!authed) clearAgentTokens();
   document.body.classList.toggle("is-auth", !authed);
   document.querySelector('meta[name="theme-color"]')?.setAttribute("content", "#f7f6f9");
@@ -624,12 +667,9 @@ function canvasNode() {
 }
 
 function paintCanvas() {
-  const old = document.getElementById("board-canvas");
-  if (!old || !state.board) return;
-  const left = old.scrollLeft;
-  const next = canvasNode();
-  old.replaceWith(next);
-  next.scrollLeft = left;
+  const page = document.querySelector(".board-page");
+  if (!page || !state.board) return;
+  updateBoardDOM(page, boardView());
 }
 
 function columnNode(column) {
@@ -1016,7 +1056,8 @@ function paintModal() {
 
 function paintBadges() {
   document.querySelectorAll("[data-badge]").forEach((node) => {
-    node.textContent = state.unread ? String(state.unread) : "";
+    const text = state.unread ? String(state.unread) : "";
+    if (node.textContent !== text) node.textContent = text;
   });
 }
 
@@ -1025,6 +1066,8 @@ function formData(form) {
 }
 
 async function run(node, fn) {
+  activeOperations += 1;
+  liveBoard.invalidate();
   if (node) node.disabled = true;
   try {
     await fn();
@@ -1036,6 +1079,8 @@ async function run(node, fn) {
     }
   } finally {
     if (node) node.disabled = false;
+    activeOperations -= 1;
+    liveBoard.invalidate();
   }
 }
 
@@ -1100,7 +1145,7 @@ const clicks = {
   },
   filter(node) {
     state.filters[node.dataset.key] = !state.filters[node.dataset.key];
-    render();
+    paintCanvas();
   },
   "filter-select"(node, event) {
     toggleFilterPop(node);
@@ -1139,7 +1184,7 @@ const clicks = {
       await api(`/api/columns/${id}`, { method: "DELETE" });
       state.modal = null;
       await reloadBoard();
-      render();
+      paintModal();
     });
   },
   "pick-color"(node) {
@@ -1287,7 +1332,7 @@ const forms = {
     else await api(`/api/projects/${state.projectId}/columns`, { method: "POST", body });
     state.modal = null;
     await reloadBoard();
-    render();
+    paintModal();
   },
   async confirm() {
     if (state.modal?.action === "delete-project") {
@@ -1299,7 +1344,7 @@ const forms = {
       state.modal = null;
       closeDrawer();
       await reloadBoard();
-      render();
+      paintModal();
     }
   },
   async card(data) {
@@ -1440,7 +1485,10 @@ async function toggleIds(kind, id) {
 
 async function reloadBoard() {
   if (!state.projectId) return;
-  state.board = await api(`/api/projects/${state.projectId}/board`);
+  const version = navigationVersion;
+  const board = await api(`/api/projects/${state.projectId}/board`);
+  if (version !== navigationVersion || state.view !== "board") return;
+  state.board = board;
   paintCanvas();
 }
 
@@ -1470,7 +1518,7 @@ installDrag({
       ids.splice(detail.index, 0, picked);
       await api(`/api/projects/${state.projectId}/columns/reorder`, { method: "POST", body: { ids } });
       state.board.columns.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
-      render();
+      paintCanvas();
     }
   }),
 });

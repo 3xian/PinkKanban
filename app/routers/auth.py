@@ -12,8 +12,9 @@ from app.constants import SESSION_COOKIE, SESSION_DAYS
 from app.db import get_db
 from app.deps import current_user, session_user
 from app.limit import limit
+from app.live import board_changed
 from app.mail import send_register_code
-from app.models import AccessToken, User, utcnow
+from app.models import AccessToken, ProjectMember, User, utcnow
 from app.schemas import AccessTokenIn, EmailIn, LoginIn, PasswordIn, ProfileIn, RegisterIn
 from app.security import hash_access_token, hash_password, sign_session, verify_password
 from app.serialize import iso, user_brief
@@ -50,7 +51,7 @@ def set_session(response: Response, user_id: int) -> None:
 
 
 @router.post("/code")
-def send_code(body: EmailIn, request: Request, db: Session = Depends(get_db)):
+def send_code(body: EmailIn, request: Request, db: Session = Depends(get_db, scope="function")):
     limit(request, "code", 8, 3600)
     if db.scalar(select(User).where(User.email == body.email)):
         raise HTTPException(409, "该邮箱已注册")
@@ -59,7 +60,7 @@ def send_code(body: EmailIn, request: Request, db: Session = Depends(get_db)):
     return {"ok": True, "retry_after": RESEND_WAIT}
 
 @router.post("/register")
-def register(body: RegisterIn, request: Request, response: Response, db: Session = Depends(get_db)):
+def register(body: RegisterIn, request: Request, response: Response, db: Session = Depends(get_db, scope="function")):
     limit(request, "register", 10, 3600)
     if db.scalar(select(User).where(User.email == body.email)):
         raise HTTPException(409, "该邮箱已注册")
@@ -70,7 +71,7 @@ def register(body: RegisterIn, request: Request, response: Response, db: Session
 
 
 @router.post("/login")
-def login(body: LoginIn, request: Request, response: Response, db: Session = Depends(get_db)):
+def login(body: LoginIn, request: Request, response: Response, db: Session = Depends(get_db, scope="function")):
     limit(request, "login", 20, 600)
     user = db.scalar(select(User).where(User.email == body.email))
     ok = verify_password(body.password, user.password_hash if user else _dummy_hash())
@@ -92,7 +93,7 @@ def me(user: User = Depends(current_user)):
 
 
 @router.patch("/me")
-def update_me(body: ProfileIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def update_me(body: ProfileIn, user: User = Depends(current_user), db: Session = Depends(get_db, scope="function")):
     data = body.model_dump(exclude_unset=True)
     if "display_name" in data:
         user.display_name = data["display_name"]
@@ -101,6 +102,8 @@ def update_me(body: ProfileIn, user: User = Depends(current_user), db: Session =
     if "avatar_id" in data:
         user.avatar_id = data["avatar_id"]
     db.add(user)
+    for project_id in db.scalars(select(ProjectMember.project_id).where(ProjectMember.user_id == user.id)):
+        board_changed(db, project_id)
     return profile(user)
 
 
@@ -122,14 +125,14 @@ def token_info(token: AccessToken) -> dict:
 
 
 @router.get("/tokens")
-def list_tokens(response: Response, user: User = Depends(session_user), db: Session = Depends(get_db)):
+def list_tokens(response: Response, user: User = Depends(session_user), db: Session = Depends(get_db, scope="function")):
     response.headers["Cache-Control"] = "no-store"
     tokens = db.scalars(select(AccessToken).where(AccessToken.user_id == user.id).order_by(AccessToken.id.desc()))
     return {"items": [token_info(token) for token in tokens]}
 
 
 @router.post("/tokens")
-def create_token(body: AccessTokenIn, response: Response, user: User = Depends(session_user), db: Session = Depends(get_db)):
+def create_token(body: AccessTokenIn, response: Response, user: User = Depends(session_user), db: Session = Depends(get_db, scope="function")):
     secret = "pk_" + secrets.token_urlsafe(32)
     token = AccessToken(
         user_id=user.id,
@@ -144,7 +147,7 @@ def create_token(body: AccessTokenIn, response: Response, user: User = Depends(s
 
 
 @router.delete("/tokens/{token_id}")
-def revoke_token(token_id: int, user: User = Depends(session_user), db: Session = Depends(get_db)):
+def revoke_token(token_id: int, user: User = Depends(session_user), db: Session = Depends(get_db, scope="function")):
     token = db.scalar(select(AccessToken).where(AccessToken.id == token_id, AccessToken.user_id == user.id))
     if token is None:
         raise HTTPException(404, "凭证不存在")

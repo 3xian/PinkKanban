@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.config import daily_project_limit, timezone_name
+from app.live import board_changed
 from app.constants import COLORS, ROLE_RANK
 from app.models import (
     Activity,
@@ -58,6 +59,7 @@ def _touch(project: Project) -> None:
 
 
 def _activity(db: Session, *, project_id: int, user_id: int, action: str, card_id: int | None = None, detail: dict | None = None) -> None:
+    board_changed(db, project_id)
     db.add(Activity(project_id=project_id, card_id=card_id, user_id=user_id, action=action, detail=dumps(detail or {})))
 
 
@@ -116,6 +118,7 @@ def _lock_project(db: Session, project_id: int) -> Project:
     project = db.scalar(select(Project).where(Project.id == project_id).with_for_update())
     if project is None:
         raise HTTPException(404, "项目不存在")
+    board_changed(db, project_id)
     return project
 
 

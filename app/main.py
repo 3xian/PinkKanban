@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.config import STATIC_DIR, UPLOAD_DIR
 from app.db import get_db, init_db
-from app.routers import auth, board, inbox, projects
+from app.routers import auth, board, events, inbox, projects
 
 UNSAFE = {"POST", "PUT", "PATCH", "DELETE"}
 
@@ -47,6 +47,7 @@ app = FastAPI(title="看板", default_response_class=UTF8JSONResponse, lifespan=
 app.include_router(auth.router)
 app.include_router(projects.router)
 app.include_router(board.router)
+app.include_router(events.router)
 app.include_router(inbox.router)
 
 
@@ -83,7 +84,7 @@ async def validation_error(_request: Request, exc: RequestValidationError):
 
 
 @app.get("/api/health")
-def health(db: Session = Depends(get_db)):
+def health(db: Session = Depends(get_db, scope="function")):
     db.execute(text("SELECT 1"))
     return {"ok": True}
 
