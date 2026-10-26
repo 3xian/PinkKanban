@@ -169,7 +169,7 @@ input::placeholder, textarea::placeholder { color: #99919f; }
 /* Project identity stays stable; only the surrounding surface marks selection. */
 .project-link .project-mark { width: 28px; height: 28px; border-radius: 9px; font-size: 12px; font-weight: 600; color: #fff; border: 0; }
 .project-link:hover { color: var(--text-primary); background: #eae8ee; }
-.nav-btn.is-on, .project-link.is-on { color: #4e326f; font-weight: 650; background: #fff; box-shadow: inset 4px 0 0 #7952a8; }
+.nav-btn.is-on, .project-link.is-on { color: #4e326f; font-weight: 650; background: #fff; border-radius: 12px 0 0 12px; box-shadow: 0 2px 8px #49335f12; }
 .nav-btn .badge, .tabbar .badge { margin-left: auto; background: #fff; color: var(--violet); border-radius: 6px; min-width: 21px; height: 21px; font-size: 11px; display: grid; place-items: center; padding: 0 5px; font-weight: 650; }
 .badge[data-badge]:empty { display: none; }
 .side-label { color: #918b98; font-size: 11px; font-weight: 550; padding: 2px 12px 0; margin-bottom: -14px; }
