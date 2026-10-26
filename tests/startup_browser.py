@@ -236,11 +236,27 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         await self.page.locator('#board-canvas').wait_for()
         await self.page.clock.run_for(1000)
 
+    async def settle_board_scrollbar(self):
+        # Scroll events and their animation frames can arrive after scrollLeft
+        # changes. Start mutation assertions only once the thumb catches up.
+        for _ in range(10):
+            await asyncio.sleep(.02)
+            await self.page.clock.run_for(100)
+            settled = await self.page.evaluate('''() => {
+                const canvas = document.querySelector('.board-canvas');
+                const thumb = document.querySelector('.board-scrollbar-thumb');
+                const max = canvas.scrollWidth - canvas.clientWidth;
+                return Number(thumb.getAttribute('aria-valuenow')) === (max > 0 ? Math.round(canvas.scrollLeft / max * 100) : 0);
+            }''')
+            if settled:
+                return
+        self.fail('Board scrollbar did not catch up with the canvas')
+
     async def test_board_events_preserve_nodes_and_scroll_on_desktop_and_mobile(self):
         board = await self.mock_board()
         positions = '''() => {
             const canvas = document.querySelector('#board-canvas');
-            const view = document.querySelector('.view');
+            const view = document.querySelector('.board-main');
             return {
                 page: [view.scrollLeft, view.scrollTop],
                 canvas: [canvas.scrollLeft, canvas.scrollTop],
@@ -257,10 +273,10 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
                     const canvas = document.querySelector('#board-canvas');
                     canvas.scrollLeft = canvas.querySelector('.column').offsetWidth + 16;
                     canvas.scrollTop = 250;
-                    document.querySelector('.view').scrollTop = 600;
+                    document.querySelector('.board-main').scrollTop = 600;
                     canvas.querySelectorAll('.column-cards').forEach((body, i) => body.scrollTop = 200 + i * 100);
                 }''')
-                await self.page.clock.run_for(200)
+                await self.settle_board_scrollbar()
                 before = await self.page.evaluate(positions)
                 self.assertGreater(before['canvas'][0], 0)
                 if width > 900:
@@ -289,6 +305,84 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(self.board_requests, requests_before)
         self.assertFalse(self.errors)
 
+    async def test_mobile_hidden_board_keeps_scroll_during_live_updates(self):
+        board = await self.mock_board()
+        await self.open_mock_board(390, 844)
+        await self.page.evaluate('''() => {
+            document.querySelector('.board-main').scrollTop = 600;
+            document.querySelector('.board-canvas').scrollLeft = 316;
+        }''')
+        await self.page.clock.run_for(300)
+        positions = '''() => [document.querySelector('.board-main').scrollTop,
+                              document.querySelector('.board-canvas').scrollLeft]'''
+        before = await self.page.evaluate(positions)
+        await self.page.get_by_role('tab', name='项目动态', exact=True).click()
+        board['columns'][0]['cards'][0]['title'] = '切换期间收到的更新'
+        await self.board_event()
+        await expect(self.page.locator('.project-activity')).to_be_visible()
+        await self.page.get_by_role('tab', name='看板', exact=True).click()
+        await expect(self.page.locator('.card-title').first).to_have_text('切换期间收到的更新')
+        self.assertEqual(await self.page.evaluate(positions), before)
+        self.assertFalse(self.errors)
+
+    async def test_hidden_board_preserves_reading_anchor_across_structural_updates(self):
+        board = await self.mock_board()
+        await self.open_mock_board(390, 844)
+        await self.page.evaluate('document.querySelector(".board-main").scrollTop = 600')
+        await self.page.clock.run_for(300)
+        anchor_top = await self.page.evaluate('''() => {
+            const bounds = document.querySelector('.board-main').getBoundingClientRect();
+            window.readingCard = Array.from(document.querySelectorAll('.column:first-child .card'))
+                .find(card => card.getBoundingClientRect().bottom > bounds.top);
+            return readingCard.getBoundingClientRect().top;
+        }''')
+        cards = board['columns'][0]['cards']
+        inserted = {**cards[0], 'id': 99999, 'title': '隐藏时插入'}
+        for change in ('insert', 'delete', 'reorder'):
+            with self.subTest(change=change):
+                await self.page.get_by_role('tab', name='项目动态', exact=True).click()
+                if change == 'insert':
+                    cards.insert(0, inserted)
+                elif change == 'delete':
+                    cards.remove(inserted)
+                else:
+                    cards.append(cards.pop(0))
+                await self.board_event()
+                await self.page.get_by_role('tab', name='看板', exact=True).click()
+                self.assertTrue(await self.page.evaluate('readingCard.isConnected'))
+                self.assertAlmostEqual(await self.page.evaluate('readingCard.getBoundingClientRect().top'), anchor_top, delta=1)
+                expected_ids = [str(card['id']) for card in cards]
+                self.assertEqual(await self.page.locator('.column:first-child .card').evaluate_all('nodes => nodes.map(n => n.dataset.id)'), expected_ids)
+
+        await self.page.get_by_role('tab', name='项目动态', exact=True).click()
+        cards[0]['title'] = '恢复桌面时显示最新数据'
+        await self.board_event()
+        await self.page.set_viewport_size({'width': 1280, 'height': 800})
+        await expect(self.page.locator('.card-title').first).to_have_text('恢复桌面时显示最新数据')
+        self.assertTrue(await self.page.evaluate('readingCard.isConnected'))
+        self.assertFalse(self.errors)
+
+    async def test_mobile_activity_owns_pull_refresh_scroll_boundary(self):
+        await self.mock_board()
+        items = [dict(id=i, user={'id': 1, 'display_name': '用户'}, action='comment.added',
+                      detail={'title': '任务', 'body': '评论内容 ' * 20}, created_at='2026-10-25T08:00:00Z')
+                 for i in range(80)]
+        await self.page.route('**/api/projects/1/activity', lambda r: r.fulfill(json={'items': items}))
+        await self.open_mock_board(390, 844)
+        await self.page.evaluate('document.querySelector(".board-main").scrollTop = 600')
+        await self.page.get_by_role('tab', name='项目动态', exact=True).click()
+        for scroll, allowed in ((300, False), (0, True)):
+            await self.page.locator('.project-activity-feed').evaluate('(node, top) => node.scrollTop = top', scroll)
+            for selector in ('.workspace-header', '.project-activity-head', '.project-activity-feed'):
+                with self.subTest(scroll=scroll, selector=selector):
+                    result = await self.page.evaluate('''selector => {
+                        const rect = document.querySelector(selector).getBoundingClientRect();
+                        return kanbanGestures.canPullRefreshAt((rect.left + rect.width / 2) / innerWidth,
+                                                              (rect.top + 10) / innerHeight);
+                    }''', selector)
+                    self.assertEqual(result, allowed)
+        self.assertFalse(self.errors)
+
     async def test_board_preserves_reading_anchor_on_insert_and_delete(self):
         board = await self.mock_board()
         for width, height in ((1280, 800), (390, 844)):
@@ -296,11 +390,11 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
                 await self.open_mock_board(width, height)
                 await self.page.evaluate('''() => {
                     document.querySelector('.column-cards').scrollTop = 650;
-                    document.querySelector('.view').scrollTop = 900;
+                    document.querySelector('.board-main').scrollTop = 900;
                 }''')
                 await self.page.clock.run_for(300)
                 anchor = await self.page.evaluate('''() => {
-                    const view = document.querySelector('.view').getBoundingClientRect();
+                    const view = document.querySelector('.board-main').getBoundingClientRect();
                     const body = document.querySelector('.column-cards').getBoundingClientRect();
                     const cards = Array.from(document.querySelectorAll('.column:first-child .card'));
                     window.readingCard = cards.find(card => card.getBoundingClientRect().bottom > Math.max(view.top, body.top));

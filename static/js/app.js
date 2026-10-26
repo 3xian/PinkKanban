@@ -9,7 +9,6 @@ import { updateBoardDOM } from "./board-dom.js";
 import { createBoardSync } from "./board-sync.js";
 import { groupActivity } from "./activity.js";
 import { createColumnScrollCues } from "./column-scroll.js";
-import { createActivityLayout } from "./activity-layout.js";
 import { createBoardScrollbar } from "./board-scrollbar.js";
 import { cardCreateFields } from "./card-create.js";
 import { COVER_THEMES, coverTheme } from "./covers.js";
@@ -31,7 +30,7 @@ const state = {
   projectActivity: [],
   activityStatus: "loading",
   activityExpanded: new Set(),
-  activityPanelOpen: true,
+  boardTab: "board",
   cardId: null,
   detail: null,
   tasks: [],
@@ -48,7 +47,6 @@ const state = {
 
 const app = document.getElementById("app");
 const refreshColumnScrollCues = createColumnScrollCues(app);
-const refreshActivityLayout = createActivityLayout(app);
 const refreshBoardScrollbar = createBoardScrollbar(app);
 const drawer = document.getElementById("drawer");
 const modal = document.getElementById("modal");
@@ -271,6 +269,7 @@ async function openBoard(id, version) {
   drawer.hidden = true;
   state.projectActivity = [];
   state.activityStatus = "loading";
+  state.boardTab = "board";
   const board = await api(`/api/projects/${id}/board`);
   if (version !== navigationVersion) return;
   acceptBoard(board);
@@ -297,18 +296,11 @@ async function refreshProjectActivity() {
   }
   const panel = app.querySelector(".project-activity");
   if (panel) {
-    const scroll = panel.querySelector(".project-activity-feed")?.scrollTop || 0;
     updateBoardDOM(panel, projectActivityPanel());
-    refreshActivityLayout();
-    panel.querySelector(".project-activity-feed").scrollTop = scroll;
   }
 }
 
 document.addEventListener("toggle", (event) => {
-  if (event.target.matches?.(".project-activity") && event.target.isConnected) {
-    state.activityPanelOpen = event.target.open;
-    return;
-  }
   const group = event.target.closest?.(".activity-group");
   if (!group) return;
   const id = Number(group.dataset.activityGroup);
@@ -370,7 +362,6 @@ function render() {
   document.querySelector('meta[name="theme-color"]')?.setAttribute("content", "#f7f6f9");
   app.replaceChildren(authed ? shell() : authView());
   refreshColumnScrollCues();
-  refreshActivityLayout();
   refreshBoardScrollbar();
   if (!authed) startAuthMotion(app.querySelector(".auth"));
   paintBadges();
@@ -696,7 +687,7 @@ function boardView() {
   if (!state.board) return emptyState("选择一个项目");
   const project = state.board.project;
   const firstColumn = state.board.columns[0];
-  return el("section", { class: "board-page" },
+  return el("section", { class: "board-page", "data-board-tab": state.boardTab },
     el("div", { class: "board-head", style: `--project-color: ${safeColor(project.color)}` },
       el("div", { class: "board-heading" }, projectMark(project), el("div", { class: "board-title" }, el("h2", { text: project.name, title: project.name }), project.description ? el("p", { class: "muted", text: project.description, title: project.description }) : null)),
       el("div", { class: "board-people" },
@@ -705,25 +696,35 @@ function boardView() {
         editable() && firstColumn && !state.filters.archived ? el("button", { class: "btn-primary", "data-act": "compose", "data-column": firstColumn.id }, glyph("plus"), el("span", { text: "创建任务" })) : null,
       ),
     ),
-    el("div", { class: "filters" },
-      el("label", { class: "search-wrap" }, glyph("search"), el("input", { class: "search", id: "board-search", placeholder: "搜索卡片", value: state.filters.q, "aria-label": "搜索卡片" })),
-      el("div", { class: "filter-chips" }, chip("mine", "我的"), chip("overdue", "延期"), chip("hideDone", "隐藏完成"), chip("archived", "归档")),
-      filterSelect("filter-label", "标签", [
-        { value: "", label: "全部标签" },
-        ...state.board.labels.map((label) => ({ value: label.id, label: label.name })),
-      ], state.filters.label),
-      filterSelect("filter-priority", "优先级", [
-        { value: "", label: "全部优先级" },
-        ...PRIORITIES.filter(([value]) => value !== "none").map(([value, label]) => ({ value, label })),
-      ], state.filters.priority),
-      el("span", { class: "filter-note", "data-filter-lock": "1", hidden: !filtersOn() }, glyph("info"), "筛选开启时暂停拖拽"),
+    el("div", { class: "board-tabs", role: "tablist", "aria-label": "项目视图" },
+      ...[["board", "看板"], ["activity", "项目动态"]].map(([tab, label]) => el("button", {
+        type: "button", role: "tab", id: `board-tab-${tab}`, "data-act": "board-tab", "data-value": tab,
+        "aria-controls": tab === "board" ? "board-main" : "project-activity",
+        "aria-selected": String(state.boardTab === tab), tabindex: state.boardTab === tab ? "0" : "-1", text: label,
+      })),
     ),
-    el("div", { class: "board-workspace" }, canvasNode(), projectActivityPanel()),
-    el("div", { class: "board-scrollbar", hidden: true },
-      el("div", { class: "board-scrollbar-track" },
-        el("div", { class: "board-scrollbar-thumb", role: "scrollbar", tabindex: "0", "aria-label": "横向滚动看板", "aria-controls": "board-canvas", "aria-orientation": "horizontal", "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": "0" }),
+    el("div", { class: "board-main", id: "board-main", role: "tabpanel", "aria-labelledby": "board-tab-board", "data-refresh-scroll": "" },
+      el("div", { class: "filters" },
+        el("label", { class: "search-wrap" }, glyph("search"), el("input", { class: "search", id: "board-search", placeholder: "搜索卡片", value: state.filters.q, "aria-label": "搜索卡片" })),
+        el("div", { class: "filter-chips" }, chip("mine", "我的"), chip("overdue", "延期"), chip("hideDone", "隐藏完成"), chip("archived", "归档")),
+        filterSelect("filter-label", "标签", [
+          { value: "", label: "全部标签" },
+          ...state.board.labels.map((label) => ({ value: label.id, label: label.name })),
+        ], state.filters.label),
+        filterSelect("filter-priority", "优先级", [
+          { value: "", label: "全部优先级" },
+          ...PRIORITIES.filter(([value]) => value !== "none").map(([value, label]) => ({ value, label })),
+        ], state.filters.priority),
+        el("span", { class: "filter-note", "data-filter-lock": "1", hidden: !filtersOn() }, glyph("info"), "筛选开启时暂停拖拽"),
+      ),
+      el("div", { class: "board-workspace" }, canvasNode()),
+      el("div", { class: "board-scrollbar", hidden: true },
+        el("div", { class: "board-scrollbar-track" },
+          el("div", { class: "board-scrollbar-thumb", role: "scrollbar", tabindex: "0", "aria-label": "横向滚动看板", "aria-controls": "board-canvas", "aria-orientation": "horizontal", "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": "0" }),
+        ),
       ),
     ),
+    projectActivityPanel(),
   );
 }
 
@@ -775,11 +776,17 @@ function canvasNode() {
 function paintCanvas() {
   const page = document.querySelector(".board-page");
   if (!page || !state.board) return;
-  updateBoardDOM(page, boardView());
+  const next = boardView();
+  const main = page.querySelector(".board-main");
+  // Reconcile the inactive board after it becomes measurable again, so its
+  // surviving cards can anchor the reading position against the latest data.
+  if (!main.getClientRects().length) next.querySelector(".board-main").replaceWith(main.cloneNode(true));
+  updateBoardDOM(page, next);
   refreshColumnScrollCues();
-  refreshActivityLayout();
   refreshBoardScrollbar();
 }
+
+matchMedia("(max-width: 900px)").addEventListener("change", () => paintCanvas());
 
 function columnNode(column) {
   const cards = column.cards.filter(visible);
@@ -922,35 +929,37 @@ function activityList(items) {
     if (group.length === 1) return activityRow(group[0]);
     const first = group[0];
     return el("details", { class: "activity-group", "data-activity-group": first.id, open: state.activityExpanded.has(first.id) },
-      el("summary", {}, el("strong", { text: first.user.display_name }), ` 进行了 ${group.length} 项操作`, el("span", { class: "muted", text: relative(first.created_at) })),
+      el("summary", {},
+        el("span", { class: "activity-group-text" }, el("strong", { text: first.user.display_name }), ` 进行了 ${group.length} 项操作`),
+        activityTime(first.created_at),
+      ),
       ...group.map(activityRow),
     );
   }));
 }
 
+function activityTime(iso) {
+  return el("time", { class: "tl-time muted", datetime: iso ? (iso.endsWith("Z") ? iso : `${iso}Z`) : null, text: relative(iso) });
+}
+
 function activityRow(item) {
   return el("div", { class: item.action.startsWith("comment.") ? "tl-item activity-comment" : "tl-item" },
     el("i", { class: "tl-dot" }),
-    el("div", {},
+    el("div", { class: "tl-content" },
       el("div", { class: "tl-text" }, el("strong", { text: item.user?.display_name || "有人" }), " ", ACTIONS[item.action] || item.action, item.detail?.title ? `「${item.detail.title}」` : ""),
       item.action === "comment.added" ? el("p", { class: "activity-comment-body", text: item.detail?.body ?? (item.detail?.comment_status === "deleted" ? "评论已删除" : "这条历史动态未记录评论内容") }) : null,
-      el("div", { class: "muted", text: relative(item.created_at) }),
     ),
+    activityTime(item.created_at),
   );
 }
 
 function projectActivityPanel() {
-  return el("details", { class: "project-activity", "aria-label": "项目动态", open: state.activityPanelOpen },
-    el("summary", { class: "project-activity-head" },
+  return el("aside", { class: "project-activity", id: "project-activity", role: "tabpanel", "aria-labelledby": "board-tab-activity" },
+    el("div", { class: "project-activity-head" },
       el("strong", { text: "项目动态" }),
       el("span", { class: "muted project-activity-count", text: "最近 80 条" }),
-      el("span", { class: "project-activity-toggle" },
-        el("span", { class: "activity-expand", text: "展开" }),
-        el("span", { class: "activity-collapse", text: "收起" }),
-        glyph("chevron-down"),
-      ),
     ),
-    el("div", { class: "project-activity-feed" },
+    el("div", { class: "project-activity-feed", "data-refresh-scroll": "" },
       state.activityStatus === "loading" ? el("p", { class: "muted", text: "正在加载动态…" }) : null,
       state.activityStatus === "error" ? el("button", { class: "btn-ghost", "data-act": "refresh-activity", text: "动态加载失败，点击重试" }) : null,
       state.activityStatus !== "loading" ? activityList(state.projectActivity) : null,
@@ -1288,6 +1297,11 @@ function idOf(node) {
 }
 
 const clicks = {
+  "board-tab"(node) {
+    state.boardTab = node.dataset.value;
+    app.querySelector(".board-page").dataset.boardTab = state.boardTab;
+    paintCanvas();
+  },
   "refresh-activity"() { void refreshProjectActivity(); },
   "auth-mode"(node) {
     state.authMode = node.dataset.mode;
@@ -1666,6 +1680,15 @@ function handleBack() {
 window.kanbanNavigation = Object.freeze({ handleBack });
 
 document.addEventListener("keydown", (event) => {
+  const tab = event.target?.closest?.('[data-act="board-tab"]');
+  if (tab && ["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
+    event.preventDefault();
+    const tabs = Array.from(tab.parentNode.querySelectorAll('[role="tab"]'));
+    const index = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 :
+      (tabs.indexOf(tab) + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+    tabs[index].click();
+    tabs[index].focus();
+  }
   if (event.key === "Escape") handleBack();
 });
 

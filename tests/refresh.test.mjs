@@ -46,6 +46,7 @@ test('native refresh checks page scroll even when touching the fixed header', ()
   const page = element('', null, { scrollHeight: 500, overflowY: 'auto', scrollTop: 0 });
   globalThis.document = {
     scrollingElement: { scrollTop: 0 },
+    querySelectorAll: () => [],
     querySelector: () => page,
     elementFromPoint: () => element(''),
   };
@@ -62,6 +63,7 @@ test('native refresh checks page scroll even when touching the fixed header', ()
 test('native coordinates resolve the visible viewport and default viewport', () => {
   const hits = [];
   globalThis.document = {
+    querySelectorAll: () => [],
     querySelector: () => null,
     scrollingElement: null,
     elementFromPoint: (x, y) => { hits.push([x, y]); return element(); },
@@ -73,4 +75,41 @@ test('native coordinates resolve the visible viewport and default viewport', () 
   assert.deepEqual(hits, [[200, 200], [120, 160]]);
   delete globalThis.document;
   delete globalThis.window;
+});
+
+test('native refresh follows the visible panel, including gestures on its header', () => {
+  const header = element();
+  const board = element('', null, { scrollTop: 600, visible: false });
+  const feed = element('', null, { scrollTop: 300, visible: true, scrollHeight: 1000, overflowY: 'auto' });
+  const text = element('', feed);
+  for (const node of [board, feed]) {
+    node.getClientRects = () => node.visible ? [{}] : [];
+    node.contains = (hit) => hit === node || hit.parentElement === node;
+  }
+  let hit = header;
+  globalThis.document = {
+    querySelectorAll: () => [board, feed],
+    querySelector: () => ({ scrollTop: 0 }),
+    elementFromPoint: () => hit,
+  };
+  globalThis.window = { innerWidth: 400, innerHeight: 800 };
+  try {
+    assert.equal(canPullRefreshAt(0.5, 0.1), false);
+    feed.scrollTop = 0;
+    assert.equal(canPullRefreshAt(0.5, 0.1), true);
+    hit = text;
+    assert.equal(canPullRefreshAt(0.5, 0.5), true);
+    board.visible = true;
+    // With both desktop panels visible, the touched panel owns the gesture.
+    assert.equal(canPullRefreshAt(0.5, 0.5), true);
+    hit = header;
+    assert.equal(canPullRefreshAt(0.5, 0.1), false);
+    feed.visible = false;
+    board.scrollTop = 0;
+    feed.scrollTop = 300;
+    assert.equal(canPullRefreshAt(0.5, 0.1), true);
+  } finally {
+    delete globalThis.document;
+    delete globalThis.window;
+  }
 });

@@ -6,7 +6,7 @@ export function createBoardScrollbar(root) {
     frame = 0;
     if (!canvas?.isConnected) return;
     const max = maximum();
-    bar.hidden = max <= 1;
+    bar.hidden = !canvas.getClientRects().length || max <= 1;
     if (bar.hidden) return;
     const rect = canvas.getBoundingClientRect();
     bar.style.left = `${rect.left}px`;
@@ -23,7 +23,6 @@ export function createBoardScrollbar(root) {
     if (!frame) frame = requestAnimationFrame(update);
   }
   const resize = new ResizeObserver(schedule);
-  const mutation = new MutationObserver(schedule);
   root.addEventListener("scroll", (event) => {
     if (event.target === canvas) schedule();
   }, { capture: true, passive: true });
@@ -73,7 +72,6 @@ export function createBoardScrollbar(root) {
   return function refresh() {
     stop();
     resize.disconnect();
-    mutation.disconnect();
     canvas = root.querySelector(".board-canvas");
     bar = root.querySelector(".board-scrollbar");
     if (!canvas || !bar) return;
@@ -83,8 +81,6 @@ export function createBoardScrollbar(root) {
     const navigation = root.querySelector(".tabbar");
     if (navigation) resize.observe(navigation);
     for (const column of canvas.children) resize.observe(column);
-    // Activity panel expansion adjusts trailing space through canvas attributes.
-    mutation.observe(canvas, { attributes: true, attributeFilter: ["class", "style"] });
     update();
   };
 }
