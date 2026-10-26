@@ -1,4 +1,5 @@
 """Isolated desktop layout checks; serves fixtures without a database."""
+import asyncio
 import functools
 import json
 import sys
@@ -428,44 +429,104 @@ class DesktopTests(unittest.IsolatedAsyncioTestCase):
         await self.visit('board/1', '.card')
         await self.page.locator('.card').first.click()
         await self.page.locator('.drawer-title').wait_for()
-        main = await self.page.locator('.drawer-content').bounding_box()
-        side = await self.page.locator('.drawer-side').bounding_box()
-        self.assertGreater(main['width'], side['width'] * 1.5)
-        self.assertEqual(await self.page.locator('.drawer-content .checklist').count(), 1)
-        self.assertEqual(await self.page.locator('.drawer-content .comment').count(), 2)
-        self.assertEqual(await self.page.locator('.drawer-side .props').count(), 1)
         detail = await self.page.request.get(f'{self.url}/api/cards/1')
         detail = await detail.json()
         saves = []
+        release_save = asyncio.Event()
         async def save(route):
             body = route.request.post_data_json
             saves.append(body)
+            if 'priority' in body:
+                await release_save.wait()
             detail['card'].update(body)
             await route.fulfill(json=detail)
         await self.page.route('**/api/cards/1', save)
         await self.page.locator('.drawer-title').fill('适用于宽屏与窄屏的完整卡片标题' * 5)
         await self.page.locator('.drawer-title').blur()
         await self.page.wait_for_function('document.querySelector(".drawer-title").value.length > 50')
-        await self.page.locator('.drawer-content').evaluate('node => node.scrollTop = 300')
-        before = await self.page.locator('.drawer-content').evaluate('node => node.scrollTop')
+        await self.page.locator('[data-detail-key="new-comment"] > summary').click()
+        await self.page.locator('[data-form="comment"] textarea').fill('未发送的评论草稿')
+        await self.page.locator('[data-act="edit-description"]').click()
+        await self.page.locator('[data-form="description"] textarea').fill('尚未保存的描述')
+        await self.page.locator('[data-detail-key="priority"] > summary').click()
         async with self.page.expect_response(lambda r: r.url.endswith('/api/cards/1') and r.request.method == 'PATCH'):
             await self.page.locator('[data-act=priority][data-value=urgent]').click()
+            await self.page.locator('.drawer-body').evaluate('node => node.scrollTop = 300')
+            before = await self.page.locator('[data-form="description"] textarea').bounding_box()
+            release_save.set()
         await self.page.wait_for_function('document.querySelector("[data-act=priority][data-value=urgent]").classList.contains("is-on")')
-        self.assertAlmostEqual(await self.page.locator('.drawer-content').evaluate('node => node.scrollTop'), before, delta=1)
+        after = await self.page.locator('[data-form="description"] textarea').bounding_box()
+        self.assertAlmostEqual(after['y'], before['y'], delta=1)
+        self.assertEqual(await self.page.locator('[data-form="comment"] textarea').input_value(), '未发送的评论草稿')
+        self.assertEqual(await self.page.locator('[data-form="description"] textarea').input_value(), '尚未保存的描述')
         title = await self.page.locator('.drawer-title').evaluate('node => ({width: node.clientWidth, scroll: node.scrollWidth, height: node.clientHeight})')
         self.assertLessEqual(title['scroll'], title['width'] + 1)
-        self.assertGreater(title['height'], 50)
+        self.assertEqual(await self.page.locator('.drawer-title').input_value(), '适用于宽屏与窄屏的完整卡片标题' * 5)
         self.assertTrue(any('title' in body for body in saves))
         await self.page.keyboard.press('Escape')
         self.assertFalse(await self.page.locator('.drawer-panel').is_visible())
         self.assertFalse(self.errors)
 
+    async def test_task_refresh_uses_remote_values_for_untouched_fields(self):
+        await self.visit('board/1', '.card')
+        await self.page.locator('.card').first.click()
+        await self.page.locator('[data-act="edit-description"]').click()
+        detail = card_detail({**CARDS[0], 'title': '其他成员更新的标题',
+                              'due_on': '2030-12-31', 'description': '其他成员更新的描述'})
+        saves = []
+
+        async def save(route):
+            body = route.request.post_data_json
+            saves.append(body)
+            detail['card'].update(body)
+            await route.fulfill(json=detail)
+
+        await self.page.route('**/api/cards/1', save)
+        await self.page.locator('[data-detail-key="priority"] > summary').click()
+        await self.page.locator('[data-act="priority"][data-value="urgent"]').click()
+        await self.page.wait_for_function(
+            'document.querySelector(".drawer-title").value === "其他成员更新的标题"')
+        self.assertEqual(await self.page.locator('[data-save="due"]').input_value(), '2030-12-31')
+        self.assertEqual(await self.page.locator('[data-form="description"] textarea').input_value(), '其他成员更新的描述')
+        await self.page.locator('.drawer-title').focus()
+        await self.page.locator('.drawer-title').blur()
+        await self.page.locator('[data-detail-key="due"] > summary').click()
+        await self.page.locator('[data-save="due"]').focus()
+        await self.page.locator('[data-save="due"]').blur()
+        await self.page.locator('[data-act="cancel-description"]').click()
+        self.assertEqual(await self.page.locator('.section-desc .md').inner_text(), '其他成员更新的描述')
+        self.assertEqual(saves, [{'priority': 'urgent'}])
+        self.assertFalse(self.errors)
+
+    async def test_task_refresh_preserves_title_typed_during_pending_save(self):
+        await self.visit('board/1', '.card')
+        await self.page.locator('.card').first.click()
+        release_save = asyncio.Event()
+        detail = card_detail({**CARDS[0], 'title': '服务端的新标题'})
+
+        async def save(route):
+            await release_save.wait()
+            detail['card'].update(route.request.post_data_json)
+            await route.fulfill(json=detail)
+
+        await self.page.route('**/api/cards/1', save)
+        await self.page.locator('[data-detail-key="priority"] > summary').click()
+        async with self.page.expect_response(lambda r: r.url.endswith('/api/cards/1') and r.request.method == 'PATCH'):
+            await self.page.locator('[data-act="priority"][data-value="urgent"]').click()
+            await self.page.locator('.drawer-title').fill('尚未提交的标题')
+            release_save.set()
+        await self.page.wait_for_function(
+            'document.querySelector("[data-act=priority][data-value=urgent]").getAttribute("aria-pressed") === "true"')
+        self.assertEqual(await self.page.locator('.drawer-title').input_value(), '尚未提交的标题')
+        self.assertTrue(await self.page.locator('.drawer-title').evaluate('node => node === document.activeElement'))
+        self.assertFalse(self.errors)
+
     async def test_cover_themes_save_render_and_clear(self):
         await self.visit('board/1', '.card')
         await self.page.locator('.card').first.click()
-        picker = self.page.get_by_role('group', name='任务封面')
+        picker = self.page.locator('[data-detail-key="cover"]')
         await picker.wait_for()
-        self.assertEqual(await picker.locator('button').count(), 9)
+        self.assertFalse(await picker.locator('.cover-picker').is_visible())
         detail = card_detail({**CARDS[0]})
         saves = []
         async def save(route):
@@ -475,14 +536,17 @@ class DesktopTests(unittest.IsolatedAsyncioTestCase):
             await route.fulfill(json=detail)
         await self.page.route('**/api/cards/1', save)
         for name, color in [('开发', '#3D6B8A'), ('数据', '#2F6F6A')]:
-            await picker.get_by_role('button', name=name, exact=True).click()
+            await picker.locator('summary').click()
+            await picker.locator(f'[data-color="{color}"]').click()
             await self.page.wait_for_function(
                 '(color) => document.querySelector(`.cover-option[data-color="${color}"]`).getAttribute("aria-pressed") === "true"',
                 arg=color,
             )
+            self.assertFalse(await picker.locator('.cover-picker').is_visible())
             badge = self.page.locator('.card[data-id="1"] .card-cover-icon')
             self.assertEqual(await badge.get_attribute('aria-label'), name)
             self.assertIn('/static/icons/covers/', await badge.evaluate('n => getComputedStyle(n).maskImage'))
+        await picker.locator('summary').click()
         await picker.get_by_role('button', name='无封面', exact=True).click()
         await self.page.wait_for_function('!document.querySelector(".card[data-id=\\"1\\"] .card-cover-icon")')
         self.assertEqual(saves, [{'cover_color': '#3D6B8A'}, {'cover_color': '#2F6F6A'}, {'cover_color': None}])
@@ -616,6 +680,7 @@ class DesktopTests(unittest.IsolatedAsyncioTestCase):
             panel = self.page.locator('.drawer-panel')
             overflow = await panel.evaluate('node => node.scrollWidth - node.clientWidth')
             self.assertLessEqual(overflow, 1)
+            await self.page.locator('[data-detail-key="new-comment"] > summary').click()
             await self.page.locator('[data-form=comment] button').scroll_into_view_if_needed()
             button = await self.page.locator('[data-form=comment] button').bounding_box()
             self.assertGreaterEqual(button['y'], 0)
@@ -623,6 +688,21 @@ class DesktopTests(unittest.IsolatedAsyncioTestCase):
             await self.page.locator('[data-act=close-drawer].icon-btn').click()
             self.assertFalse(await panel.is_visible())
         self.assertFalse(self.errors)
+
+    async def test_native_back_and_escape_close_picker_before_task(self):
+        await self.visit('board/1', '.card')
+        await self.page.locator('.card').first.click()
+        await self.page.locator('[data-detail-key="more"] > summary').click()
+        self.assertTrue(await self.page.evaluate('window.kanbanNavigation.handleBack()'))
+        self.assertTrue(await self.page.locator('.drawer-panel').is_visible())
+        self.assertFalse(await self.page.locator('[data-act="delete-card"]').is_visible())
+        await self.page.locator('[data-detail-key="priority"] > summary').click()
+        await self.page.keyboard.press('Escape')
+        self.assertTrue(await self.page.locator('.drawer-panel').is_visible())
+        self.assertFalse(await self.page.locator('[data-act="priority"]').first.is_visible())
+        self.assertTrue(await self.page.evaluate('window.kanbanNavigation.handleBack()'))
+        self.assertFalse(await self.page.locator('.drawer-panel').is_visible())
+        self.assertFalse(await self.page.evaluate('window.kanbanNavigation.handleBack()'))
 
     async def test_auth_and_dialogs_fit_short_desktop_and_mobile(self):
         await self.page.route('**/api/bootstrap', lambda route: route.fulfill(status=401, json={'detail': '请先登录'}))

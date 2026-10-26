@@ -1,7 +1,7 @@
 import { api } from "./api.js";
 import { installDrag } from "./dnd.js";
 import { canPullRefreshAt } from "./refresh.js";
-import { ACTIONS, COLORS, PRIORITIES, ROLES, avatar, canAdmin, canEdit, cardFaces, dueInfo, el, faceNode, fileSize, markdown, participantMembers, relative, responsibleField, safeColor } from "./format.js";
+import { ACTIONS, COLORS, PRIORITIES, ROLES, avatar, canAdmin, canEdit, cardFaces, dueInfo, el, faceNode, fileSize, relative, safeColor } from "./format.js";
 import { icon as glyph } from "./icons.js";
 import { createTokenPanel } from "./tokens.js";
 import { createAvatarPicker } from "./avatar-picker.js";
@@ -11,7 +11,8 @@ import { groupActivity } from "./activity.js";
 import { createColumnScrollCues } from "./column-scroll.js";
 import { createBoardScrollbar } from "./board-scrollbar.js";
 import { cardCreateFields } from "./card-create.js";
-import { COVER_THEMES, coverTheme } from "./covers.js";
+import { coverTheme } from "./covers.js";
+import { taskDetail } from "./task-detail.js";
 
 window.kanbanGestures = Object.freeze({ canPullRefreshAt });
 
@@ -51,6 +52,8 @@ const refreshBoardScrollbar = createBoardScrollbar(app);
 const drawer = document.getElementById("drawer");
 const modal = document.getElementById("modal");
 const toasts = document.getElementById("toasts");
+let detailUI = { descriptionEditing: false };
+const pendingDetailForms = new Set();
 let tokenPanel = null;
 let activeOperations = 0;
 let navigationVersion = 0;
@@ -333,6 +336,7 @@ async function openNotes() {
 
 async function openCard(id) {
   const version = navigationVersion;
+  if (state.cardId !== id) detailUI = { descriptionEditing: false };
   state.cardId = id;
   try {
     const detail = await api(`/api/cards/${id}`);
@@ -349,6 +353,7 @@ async function openCard(id) {
 function closeDrawer() {
   state.cardId = null;
   state.detail = null;
+  detailUI = { descriptionEditing: false };
   drawer.hidden = true;
   drawer.replaceChildren();
   liveBoard.resume();
@@ -1060,137 +1065,63 @@ function coverSymbol(theme, className = "") {
   });
 }
 
-function coverPicker(card, edit) {
-  return el("div", { class: "cover-picker", role: "group", "aria-label": "任务封面" },
-    el("button", {
-      type: "button", class: card.cover_color ? "cover-option cover-none" : "cover-option cover-none is-on",
-      "data-act": "cover", "data-color": "", "aria-pressed": String(!card.cover_color), disabled: !edit,
-    }, glyph("close"), el("span", { text: "无封面" })),
-    ...COVER_THEMES.map((theme) => el("button", {
-      type: "button", class: coverTheme(card.cover_color) === theme ? "cover-option is-on" : "cover-option",
-      "data-act": "cover", "data-color": theme.value,
-      "aria-label": theme.name,
-      "aria-pressed": String(coverTheme(card.cover_color) === theme), disabled: !edit,
-      style: `--cover-bg:${theme.background};--cover-selected:${theme.selected};--cover-border:${theme.border};--cover-ink:${theme.ink}`,
-    }, coverSymbol(theme), el("span", { text: theme.name }), el("span", { class: "cover-check", "aria-hidden": "true" }, glyph("check")))),
-  );
-}
-
+// Repainting a task must not discard unrelated edits or move the reader.
 function paintDrawer() {
-  const data = state.detail;
-  if (!data) {
+  if (!state.detail || !state.cardId) {
     drawer.hidden = true;
     return;
   }
-  const card = data.card;
-  const edit = card.can_edit;
-  const saved = {
-    panel: drawer.querySelector(".drawer-panel")?.scrollTop || 0,
-    content: drawer.querySelector(".drawer-content")?.scrollTop || 0,
-    side: drawer.querySelector(".drawer-side")?.scrollTop || 0,
-    desc: drawer.querySelector(".desc-input, .section-desc .md")?.scrollTop || 0,
+  const sameCard = drawer.dataset.cardId === String(state.cardId);
+  const fields = new Map();
+  const opened = new Set();
+  const scroll = new Map();
+  let focused = null;
+  const fieldKey = (node) => {
+    const form = node.closest("[data-draft-key]");
+    return form ? `${form.dataset.draftKey}:${node.name}` : node.dataset.save;
   };
-  const labels = state.board?.labels || [];
-  const members = state.board?.members || [];
+  if (sameCard) {
+    for (const node of drawer.querySelectorAll("input[name], textarea[name], [data-save]")) {
+      if (node.type === "file" || node.type === "hidden") continue;
+      const key = fieldKey(node);
+      if (!key) continue;
+      if (node.value !== node.defaultValue) fields.set(key, node.value);
+      if (node === document.activeElement) focused = { key, start: node.selectionStart, end: node.selectionEnd };
+    }
+    for (const node of drawer.querySelectorAll("details[open][data-detail-key]")) opened.add(node.dataset.detailKey);
+    for (const selector of [".drawer-panel", ".drawer-body", ".drawer-content", ".drawer-side", ".desc-input"]) {
+      const node = drawer.querySelector(selector);
+      if (node) scroll.set(selector, node.scrollTop);
+    }
+  }
   drawer.hidden = false;
+  drawer.dataset.cardId = state.cardId;
   drawer.replaceChildren(
     el("button", { class: "drawer-backdrop", "data-act": "close-drawer", "aria-label": "关闭" }),
-    el("article", { class: "drawer-panel" },
-      el("div", { class: "drawer-top" },
-        el("i", { class: "sheet-handle", "aria-hidden": "true" }),
-        el("div", { class: "drawer-top-row" },
-          el("span", { class: "crumb", text: [state.board?.project?.name, columnName(card.column_id)].filter(Boolean).join(" / ") }),
-          el("button", { class: "icon-btn", "data-act": "close-drawer", "aria-label": "关闭" }, glyph("close")),
-        ),
-        edit ? el("textarea", { class: "drawer-title", "data-save": "title", rows: "1", text: card.title, "aria-label": "标题" }) : el("h2", { class: "drawer-title", text: card.title }),
-      ),
-      el("div", { class: "drawer-body" },
-        el("div", { class: "drawer-content" },
-          el("div", { class: "section section-desc" },
-            el("h3", { text: "描述" }),
-            edit ? el("textarea", { class: "desc-input", "data-save": "description", text: card.description || "", "aria-label": "描述" }) : markdown(card.description || "没有描述"),
-          ),
-          el("div", { class: "section" }, el("h3", { text: "清单" }), ...data.checklists.map(checklistBlock), edit ? el("form", { "data-form": "checklist", class: "composer" }, el("input", { name: "title", placeholder: "清单标题", required: true }), el("button", { class: "btn-tiny", text: "添加" })) : null),
-          attachmentSection(data.attachments, edit),
-          el("div", { class: "section" },
-            el("h3", { text: "评论" }),
-            ...data.comments.map((comment) => el("article", { class: "comment" },
-              el("header", {}, comment.user ? avatar(comment.user) : null, el("strong", { text: comment.user?.display_name || "成员" }), el("span", { class: "muted", text: relative(comment.created_at) + (comment.edited ? " · 已编辑" : "") }), comment.mine ? el("button", { type: "button", class: "icon-btn icon-btn-sm check-remove", "data-act": "delete-comment", "data-id": comment.id, "aria-label": "删除评论" }, glyph("trash")) : null),
-              el("p", { text: comment.body }),
-            )),
-            edit ? el("form", { "data-form": "comment", class: "comment-form" }, el("textarea", { name: "body", placeholder: "写评论，用 @显示名 提及成员", required: true }), el("button", { class: "btn-primary btn-tiny", text: "发送" })) : null,
-          ),
-        ),
-        el("div", { class: "drawer-side" },
-          el("div", { class: "props" },
-            el("div", { class: "prop" },
-              el("span", { class: "prop-k", text: "优先级" }),
-              el("div", { class: "prio" }, ...PRIORITIES.map(([value, label]) => el("button", { type: "button", class: card.priority === value ? "is-on" : "", "data-act": "priority", "data-value": value, disabled: !edit, text: label }))),
-            ),
-            el("div", { class: "prop" },
-              el("span", { class: "prop-k", text: "截止日期" }),
-              el("label", { class: "field" }, el("input", { type: "date", "data-save": "due", value: card.due_on || "", disabled: !edit, "aria-label": "截止日期" })),
-            ),
-            el("div", { class: "prop" },
-              el("span", { class: "prop-k", text: "主负责人" }),
-              responsibleField(card, members, edit),
-            ),
-            el("div", { class: "prop" },
-              el("span", { class: "prop-k", text: "状态" }),
-              el("label", { class: "check" }, el("input", { type: "checkbox", "data-act": "done", checked: card.done, disabled: !edit }), "完成"),
-            ),
-            el("div", { class: "prop prop-top" },
-              el("span", { class: "prop-k", text: "参与人" }),
-              el("div", { class: "assignees" }, ...participantMembers(card, members).map((person) => {
-                const on = (card.assignee_ids || []).includes(person.id);
-                return el("button", { type: "button", class: on ? "assignee is-on" : "assignee", "data-act": "toggle-assignee", "data-id": person.id, disabled: !edit }, avatar(person), person.display_name);
-              })),
-            ),
-            el("div", { class: "prop prop-top" },
-              el("span", { class: "prop-k", text: "封面" }),
-              coverPicker(card, edit),
-            ),
-          ),
-          el("div", { class: "section label-section" }, el("h3", { text: "标签" }), el("div", { class: "pills", role: "group", "aria-label": "任务标签" }, ...labels.map((label) => {
-            const on = card.label_ids.includes(label.id);
-            const button = el("button", { type: "button", class: on ? "pill is-on" : "pill", "data-act": "toggle-label", "data-id": label.id, "aria-pressed": String(on), disabled: !edit }, el("span", { class: "label-mark", "aria-hidden": "true" }, glyph("check")), el("span", { class: "label-name", text: label.name }));
-            return button;
-          })), !labels.length ? el("p", { class: "muted label-empty", text: "暂无标签" }) : null, edit ? el("form", { "data-form": "label", class: "composer label-composer" }, el("input", { name: "name", placeholder: "输入新标签名称", "aria-label": "新标签名称", maxlength: "24", required: true }), el("button", { type: "submit", class: "btn-tiny", text: "添加" })) : null),
-          el("div", { class: "section" }, el("h3", { text: "动态" }), activityList(data.activity)),
-          edit ? el("div", { class: "more-actions" },
-            el("button", { class: "btn-ghost", "data-act": "duplicate", text: "复制" }),
-            el("button", { class: "btn-ghost", "data-act": card.archived ? "restore-card" : "archive-card", text: card.archived ? "恢复" : "归档" }),
-            el("button", { class: "btn-danger", "data-act": "delete-card", text: "删除" }),
-          ) : null,
-        ),
-      ),
-    ),
+    taskDetail({ data: state.detail, board: state.board, ui: detailUI, activityList, attachmentSection }),
   );
-  const panel = drawer.querySelector(".drawer-panel");
-  const content = drawer.querySelector(".drawer-content");
-  const side = drawer.querySelector(".drawer-side");
-  const desc = drawer.querySelector(".desc-input, .section-desc .md");
-  if (panel) panel.scrollTop = saved.panel;
-  if (content) content.scrollTop = saved.content;
-  if (side) side.scrollTop = saved.side;
-  if (desc) desc.scrollTop = saved.desc;
+  for (const node of drawer.querySelectorAll("details[data-detail-key]")) node.open = opened.has(node.dataset.detailKey);
+  for (const node of drawer.querySelectorAll("input[name], textarea[name], [data-save]")) {
+    const key = fieldKey(node);
+    if (fields.has(key)) node.value = fields.get(key);
+    if (focused?.key === key) {
+      node.focus({ preventScroll: true });
+      if (focused.start != null && typeof node.setSelectionRange === "function") node.setSelectionRange(focused.start, focused.end);
+    }
+  }
+  for (const form of drawer.querySelectorAll("[data-draft-key]")) {
+    if (pendingDetailForms.has(`${state.cardId}:${form.dataset.draftKey}`)) form.querySelector('[type="submit"]')?.setAttribute("disabled", "");
+  }
+  for (const [selector, top] of scroll) {
+    const node = drawer.querySelector(selector);
+    if (node) node.scrollTop = top;
+  }
 }
 
-function columnName(id) {
-  return state.board?.columns.find((column) => column.id === id)?.name || "";
-}
-
-function checklistBlock(list) {
-  const done = list.items.filter((item) => item.done).length;
-  const edit = state.detail.card.can_edit;
-  return el("div", { class: "checklist" },
-    el("div", { class: "checklist-head" }, el("strong", { text: list.title }), el("span", { class: "count", text: `${done}/${list.items.length}` })),
-    ...list.items.map((item) => el("div", { class: "check-item" },
-      el("label", { class: "check" }, el("input", { type: "checkbox", "data-act": "item", "data-id": item.id, checked: item.done, disabled: !edit }), el("span", { text: item.text })),
-      edit ? el("button", { type: "button", class: "icon-btn icon-btn-sm check-remove", "data-act": "delete-item", "data-id": item.id, "aria-label": "删除清单项" }, glyph("trash")) : null,
-    )),
-    edit ? el("form", { "data-form": "item", class: "composer" }, el("input", { type: "hidden", name: "checklist_id", value: list.id }), el("input", { name: "text", placeholder: "清单项", required: true }), el("button", { class: "btn-tiny", text: "添加" })) : null,
-  );
+function closeDetailPickers(except = null) {
+  for (const picker of drawer.querySelectorAll("details[data-detail-picker][open]")) {
+    if (picker !== except) picker.open = false;
+  }
 }
 
 function attachmentSection(files, edit) {
@@ -1200,7 +1131,7 @@ function attachmentSection(files, edit) {
     el("div", { class: "attachment-heading" }, el("h3", { text: "附件" }), el("span", { class: "muted", text: String(files.length) })),
     images.length ? el("div", { class: "attachment-gallery" }, ...images.map(fileRow)) : null,
     documents.length ? el("div", { class: "attachment-files" }, ...documents.map(fileRow)) : null,
-    !files.length ? el("p", { class: "muted", text: "暂无附件，可上传图片或文件。" }) : null,
+    !files.length ? el("p", { class: "muted", text: edit ? "暂无附件，可上传图片或文件。" : "暂无附件。" }) : null,
     edit ? el("input", { class: "file-input", type: "file", "data-act": "upload", "aria-label": "上传附件" }) : null,
   );
 }
@@ -1345,6 +1276,15 @@ const clicks = {
   "close-drawer"() {
     closeDrawer();
   },
+  "edit-description"() {
+    detailUI.descriptionEditing = true;
+    paintDrawer();
+    drawer.querySelector('[data-form="description"] textarea')?.focus({ preventScroll: true });
+  },
+  "cancel-description"() {
+    detailUI.descriptionEditing = false;
+    paintDrawer();
+  },
   "toggle-archived"(node) {
     state.showArchived = !state.showArchived;
     run(node, async () => { await loadProjects(); render(); });
@@ -1395,10 +1335,10 @@ const clicks = {
     node.parentElement.querySelectorAll(".swatch").forEach((swatch) => swatch.classList.toggle("is-on", swatch === node));
   },
   priority(node) {
-    run(node, () => saveCard({ priority: node.dataset.value }));
+    run(node, () => saveCard({ priority: node.dataset.value }, true));
   },
   cover(node) {
-    run(node, () => saveCard({ cover_color: node.dataset.color || null }));
+    run(node, () => saveCard({ cover_color: node.dataset.color || null }, true));
   },
   done(node) {
     run(node, () => saveCard({ done: node.checked }));
@@ -1474,7 +1414,13 @@ const clicks = {
   },
   transfer(node) {
     const id = idOf(node);
-    run(node, async () => { state.settings = await api(`/api/projects/${state.projectId}/transfer`, { method: "POST", body: { user_id: id } }); render(); });
+    const person = state.settings.members.find((member) => member.id === id);
+    state.modal = {
+      type: "confirm", title: "移交项目", ok: "确认移交", action: "transfer",
+      body: `确定将项目「${state.settings.project.name}」移交给「${person.display_name}」吗？移交后，对方将成为拥有者，你将变为管理员，不能再移交或删除项目。`,
+      projectId: state.projectId, userId: id,
+    };
+    paintModal();
   },
   "remove-member"(node) {
     const id = idOf(node);
@@ -1512,6 +1458,11 @@ const clicks = {
 };
 
 document.addEventListener("click", (event) => {
+  closeDetailPickers(event.target.closest("[data-detail-picker]"));
+  if (event.target.closest(".description-read") && !event.target.closest("a, button") && state.detail?.card.can_edit && window.getSelection()?.isCollapsed !== false) {
+    clicks["edit-description"]();
+    return;
+  }
   const node = event.target.closest("[data-act]");
   clicks[node?.dataset.act]?.(node);
 });
@@ -1559,6 +1510,12 @@ const forms = {
       closeDrawer();
       await reloadBoard();
       paintModal();
+    } else if (state.modal?.action === "transfer") {
+      const draft = state.modal;
+      const settings = await api(`/api/projects/${draft.projectId}/transfer`, { method: "POST", body: { user_id: draft.userId } });
+      if (state.projectId === draft.projectId) state.settings = settings;
+      if (state.modal === draft) state.modal = null;
+      render();
     }
   },
   async card(data) {
@@ -1587,34 +1544,77 @@ const forms = {
     form.reset();
     toast("密码已更新");
   },
-  async comment(data) {
-    state.detail = await api(`/api/cards/${state.cardId}/comments`, { method: "POST", body: { body: data.body } });
+  async description(data) {
+    const id = state.cardId;
+    await saveCard({ description: data.description });
+    if (state.cardId !== id) return;
+    const current = drawer.querySelector('[data-form="description"] textarea');
+    if (current?.value === data.description) {
+      detailUI.descriptionEditing = false;
+      paintDrawer();
+    }
+    toast("描述已保存");
+  },
+  async comment(data, form) {
+    const id = state.cardId;
+    const detail = await api(`/api/cards/${id}/comments`, { method: "POST", body: { body: data.body } });
+    if (state.cardId !== id) return;
+    clearSubmittedDraft(form, data);
+    state.detail = detail;
     paintDrawer();
     await reloadBoard();
   },
-  async checklist(data) {
-    await api(`/api/cards/${state.cardId}/checklists`, { method: "POST", body: { title: data.title } });
-    await openCard(state.cardId);
+  async checklist(data, form) {
+    const id = state.cardId;
+    await api(`/api/cards/${id}/checklists`, { method: "POST", body: { title: data.title } });
+    if (state.cardId !== id) return;
+    clearSubmittedDraft(form, data);
+    await openCard(id);
     await reloadBoard();
   },
-  async item(data) {
+  async item(data, form) {
+    const id = state.cardId;
     await api(`/api/checklists/${data.checklist_id}/items`, { method: "POST", body: { text: data.text } });
-    await openCard(state.cardId);
+    if (state.cardId !== id) return;
+    clearSubmittedDraft(form, data);
+    await openCard(id);
     await reloadBoard();
   },
-  async label(data) {
+  async label(data, form) {
+    const id = state.cardId;
     await api(`/api/projects/${state.projectId}/labels`, { method: "POST", body: { name: data.name, color: state.color } });
+    if (state.cardId !== id) return;
+    clearSubmittedDraft(form, data);
     await reloadBoard();
-    await openCard(state.cardId);
+    if (state.cardId === id) await openCard(id);
   },
 };
+
+function clearSubmittedDraft(form, data) {
+  const current = [...drawer.querySelectorAll("[data-draft-key]")].find((node) => node.dataset.draftKey === form.dataset.draftKey);
+  if (current && Object.entries(data).every(([name, value]) => current.elements.namedItem(name)?.value === value)) current.reset();
+}
 
 document.addEventListener("submit", (event) => {
   const form = event.target.closest("[data-form]");
   if (!form) return;
   event.preventDefault();
   const data = formData(form);
-  run(form.querySelector("[type=submit]"), () => forms[form.dataset.form]?.(data, form));
+  const key = form.dataset.draftKey ? `${state.cardId}:${form.dataset.draftKey}` : null;
+  if (key && pendingDetailForms.has(key)) return;
+  if (key) pendingDetailForms.add(key);
+  run(form.querySelector("[type=submit]"), async () => {
+    try {
+      await forms[form.dataset.form]?.(data, form);
+    } finally {
+      if (key) {
+        pendingDetailForms.delete(key);
+        for (const current of drawer.querySelectorAll("[data-draft-key]")) {
+          if (`${state.cardId}:${current.dataset.draftKey}` === key) current.querySelector('[type="submit"]')?.removeAttribute("disabled");
+        }
+      }
+    }
+  });
 });
 
 document.addEventListener("change", (event) => {
@@ -1627,7 +1627,7 @@ document.addEventListener("change", (event) => {
   } else if (node.dataset.act === "responsible") {
     const value = node.value ? Number(node.value) : null;
     if ((state.detail?.card.responsible_user_id ?? null) === value) return;
-    run(node, () => saveCard({ responsible_user_id: value }));
+    run(node, () => saveCard({ responsible_user_id: value }, true));
   } else if (node.dataset.act === "upload" && node.files?.[0]) {
     const body = new FormData();
     body.append("file", node.files[0]);
@@ -1653,7 +1653,6 @@ document.addEventListener("focusout", (event) => {
   const card = state.detail?.card;
   if (!card) return;
   if (node.dataset.save === "title" && node.value.trim() && node.value.trim() !== card.title) run(null, () => saveCard({ title: node.value.trim() }));
-  if (node.dataset.save === "description" && node.value !== (card.description || "")) run(null, () => saveCard({ description: node.value }));
   if (node.dataset.save === "due" && (node.value || null) !== (card.due_on || null)) run(null, () => saveCard({ due_on: node.value || null }));
 });
 
@@ -1662,6 +1661,10 @@ function handleBack() {
   if (state.modal) {
     state.modal = null;
     paintModal();
+  } else if (drawer.querySelector("[data-detail-picker][open]")) {
+    const picker = drawer.querySelector("[data-detail-picker][open]");
+    closeDetailPickers();
+    picker.querySelector("summary")?.focus({ preventScroll: true });
   } else if (state.cardId) closeDrawer();
   else if (state.sidebar) setSidebar(false);
   else return false;
@@ -1684,8 +1687,12 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") handleBack();
 });
 
-async function saveCard(body) {
-  state.detail = await api(`/api/cards/${state.cardId}`, { method: "PATCH", body });
+async function saveCard(body, closePicker = false) {
+  const id = state.cardId;
+  const detail = await api(`/api/cards/${id}`, { method: "PATCH", body });
+  if (state.cardId !== id) return;
+  state.detail = detail;
+  if (closePicker) closeDetailPickers();
   syncFace();
   paintDrawer();
   paintCanvas();
@@ -1703,7 +1710,10 @@ async function toggleIds(kind, id) {
   const ids = new Set(state.detail.card[key]);
   if (ids.has(id)) ids.delete(id);
   else ids.add(id);
-  state.detail = await api(`/api/cards/${state.cardId}/${kind}`, { method: "PUT", body: { ids: [...ids] } });
+  const cardId = state.cardId;
+  const detail = await api(`/api/cards/${cardId}/${kind}`, { method: "PUT", body: { ids: [...ids] } });
+  if (state.cardId !== cardId) return;
+  state.detail = detail;
   syncFace();
   paintDrawer();
   paintCanvas();
