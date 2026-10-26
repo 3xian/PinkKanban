@@ -584,7 +584,8 @@ button.pill.is-on { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c, #8b7
 }
 @media (min-width: 901px) {
   .view { padding-top: 24px; }
-  .view.is-board { padding-top: 12px; padding-bottom: 48px; }
+  .view.is-board { padding-top: 12px; padding-bottom: 12px; }
+  .board-main { padding-bottom: 36px; }
   .board-heading h2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .board-scrollbar { background: linear-gradient(180deg, transparent, var(--bg-app) 40%); }
   .board-scrollbar-track { position: relative; height: 28px; background: transparent; }
