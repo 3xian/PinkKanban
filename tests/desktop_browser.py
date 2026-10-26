@@ -197,6 +197,38 @@ class DesktopTests(unittest.IsolatedAsyncioTestCase):
                     self.assertTrue(await self.page.evaluate('document.documentElement.scrollWidth <= innerWidth'))
         self.assertFalse(self.errors)
 
+    async def test_sidebar_keeps_navigation_accessible_without_workspace_header(self):
+        for width in (320, 390, 900, 901, 1440):
+            with self.subTest(width=width):
+                await self.page.set_viewport_size({'width': width, 'height': 640})
+                await self.visit('board/1', '.card')
+                self.assertEqual(await self.page.locator('.workspace-header').count(), 0)
+                await self.page.locator('.board-scrollbar-thumb').focus()
+                await self.page.keyboard.press('End')
+                before = await self.page.locator('.board-canvas').evaluate('node => node.scrollLeft')
+                sidebar = self.page.locator('.sidebar')
+                if width <= 900:
+                    menu = self.page.get_by_role('button', name='菜单', exact=True)
+                    bounds = await menu.bounding_box()
+                    self.assertGreaterEqual(bounds['x'], 0)
+                    self.assertLessEqual(bounds['x'] + bounds['width'], width)
+                    await menu.click()
+                    self.assertEqual(await menu.get_attribute('aria-expanded'), 'true')
+                    await self.page.keyboard.press('Escape')
+                    self.assertEqual(await menu.get_attribute('aria-expanded'), 'false')
+                    self.assertAlmostEqual(await self.page.locator('.board-canvas').evaluate('node => node.scrollLeft'), before, delta=1)
+                    await menu.click()
+                else:
+                    self.assertFalse(await self.page.locator('.tabbar').is_visible())
+                self.assertEqual(await sidebar.locator('.side-nav [data-badge]').inner_text(), '3')
+                await sidebar.locator('[data-view="notifications"]').click()
+                await self.page.locator('.notes-page').wait_for()
+                if width <= 900:
+                    await self.page.get_by_role('button', name='菜单', exact=True).click()
+                await sidebar.get_by_role('button', name='账号设置', exact=True).click()
+                await self.page.locator('.account-page').wait_for()
+        self.assertFalse(self.errors)
+
     async def test_task_groups_include_every_card_once_and_open_completed_cards(self):
         await self.visit('tasks', '.tasks-page')
         ids = await self.page.locator('.task').evaluate_all('nodes => nodes.map(n => Number(n.dataset.id))')
@@ -531,6 +563,11 @@ class DesktopTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await canvas.evaluate('n => getComputedStyle(n).scrollbarWidth'), 'none')
         bounds = await bar.bounding_box()
         self.assertAlmostEqual(bounds['y'] + bounds['height'], 900, delta=1)
+        track = self.page.locator('.board-scrollbar-track')
+        track_box = await track.bounding_box()
+        self.assertGreaterEqual(track_box['height'], 28)
+        await self.page.mouse.click(track_box['x'] + track_box['width'] - 2, track_box['y'] + 2)
+        self.assertGreater(await canvas.evaluate('n => n.scrollLeft'), 0)
         await thumb.focus()
         await self.page.keyboard.press('End')
         await self.page.wait_for_function('document.querySelector(".board-scrollbar-thumb").getAttribute("aria-valuenow") === "100"')

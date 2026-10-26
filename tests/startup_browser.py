@@ -373,7 +373,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         await self.page.get_by_role('tab', name='项目动态', exact=True).click()
         for scroll, allowed in ((300, False), (0, True)):
             await self.page.locator('.project-activity-feed').evaluate('(node, top) => node.scrollTop = top', scroll)
-            for selector in ('.workspace-header', '.project-activity-head', '.project-activity-feed'):
+            for selector in ('.board-heading', '.project-activity-head', '.project-activity-feed'):
                 with self.subTest(scroll=scroll, selector=selector):
                     result = await self.page.evaluate('''selector => {
                         const rect = document.querySelector(selector).getBoundingClientRect();
@@ -567,22 +567,22 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         await self.page.route("**/api/bootstrap", lambda r: r.fulfill(json={**DATA, "unread": payload()["unread"]}))
         await self.page.route("**/api/notifications{,/**}", notifications)
         await self.page.goto(self.url)
-        header_badge = self.page.locator(".workspace-tools [data-badge]")
-        await expect(header_badge).to_have_text("2")
-        await expect(header_badge).to_be_visible()
-        await self.page.get_by_role("button", name="查看通知", exact=True).click()
+        sidebar_badge = self.page.locator(".side-nav [data-badge]")
+        await expect(sidebar_badge).to_have_text("2")
+        await expect(sidebar_badge).to_be_visible()
+        await self.page.locator('.side-nav [data-view="notifications"]').click()
         await self.page.locator('.note[data-id="1"]').click()
-        await expect(header_badge).to_have_text("1")
-        await expect(header_badge).to_be_visible()
+        await expect(sidebar_badge).to_have_text("1")
+        await expect(sidebar_badge).to_be_visible()
         await self.page.get_by_role("button", name="全部已读", exact=True).click()
         await expect(self.page.locator(".note.is-unread")).to_have_count(0)
-        for selector in (".workspace-tools [data-badge]", ".nav-btn [data-badge]"):
+        for selector in (".side-nav [data-badge]", ".tabbar [data-badge]"):
             await expect(self.page.locator(selector)).to_be_hidden()
         await self.page.set_viewport_size({"width": 390, "height": 844})
         await expect(self.page.locator(".tabbar [data-badge]")).to_be_hidden()
         await self.page.reload()
         await self.page.locator(".shell").wait_for()
-        await expect(self.page.locator(".workspace-tools [data-badge]")).to_be_hidden()
+        await expect(self.page.locator(".side-nav [data-badge]")).to_be_hidden()
         self.assertFalse(self.errors)
 
 
