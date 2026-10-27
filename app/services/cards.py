@@ -340,7 +340,7 @@ def replace_assignees(db: Session, card_id: int, user: User, ids: list[int]) -> 
     return card
 
 
-def _card_brief(card: Card, label_ids: list[int], assignee_ids: list[int], done: int, total: int, comment_count: int, attachment_count: int) -> dict:
+def _card_brief(card: Card, label_ids: list[int], assignee_ids: list[int], done: int, total: int, comment_count: int, attachment_count: int, latest_commenter: User | None) -> dict:
     return {
         "id": card.id,
         "column_id": card.column_id,
@@ -359,6 +359,7 @@ def _card_brief(card: Card, label_ids: list[int], assignee_ids: list[int], done:
         "responsible_user_id": card.responsible_user_id,
         "checklist": {"done": done, "total": total},
         "comment_count": comment_count,
+        "latest_commenter": user_brief(latest_commenter) if latest_commenter is not None else None,
         "attachment_count": attachment_count,
     }
 
@@ -391,7 +392,8 @@ def card_detail(db: Session, card_id: int, user: User) -> dict:
     )
     actors = _users(db, {item.user_id for item in activity})
     activity_comments = {comment.id: comment for comment in comments}
-    payload = _card_brief(card, label_ids, assignee_ids, *_checklist_progress(by_list), len(comments), len(files))
+    latest_commenter = people.get(comments[-1].user_id) if comments else None
+    payload = _card_brief(card, label_ids, assignee_ids, *_checklist_progress(by_list), len(comments), len(files), latest_commenter)
     payload["description"] = card.description or ""
     payload["project_id"] = project.id
     payload["can_edit"] = (not project.archived) and ROLE_RANK[member.role] >= ROLE_RANK["member"]

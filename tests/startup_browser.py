@@ -236,6 +236,38 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         await self.page.locator('#board-canvas').wait_for()
         await self.page.clock.run_for(1000)
 
+    async def test_comment_badge_tracks_latest_author_without_replacing_card(self):
+        board = await self.mock_board()
+        card = board['columns'][0]['cards'][0]
+        first = {'id': 2, 'display_name': '陈晨', 'avatar_id': 'male-1'}
+        latest = {'id': 3, 'display_name': '阿雅', 'avatar_id': 'female-2'}
+        for width in (1280, 390):
+            with self.subTest(width=width):
+                card.update(comment_count=2, latest_commenter=first)
+                await self.open_mock_board(width)
+                task = self.page.locator(f'.card[data-id="{card["id"]}"]')
+                badge = task.get_by_role('img', name='2 条评论，最新评论：陈晨', exact=True)
+                await expect(badge).to_be_visible()
+                await expect(badge.locator('img')).to_have_attribute('src', '/static/avatars/male-1.webp?v=1')
+                await expect(badge.locator('img')).to_have_js_property('complete', True)
+                self.assertGreater(await badge.locator('img').evaluate('img => img.naturalWidth'), 0)
+                original = await task.element_handle()
+
+                card.update(comment_count=3, latest_commenter=latest)
+                await self.board_event()
+                badge = task.get_by_role('img', name='3 条评论，最新评论：阿雅', exact=True)
+                await expect(badge).to_be_visible()
+                await expect(badge.locator('img')).to_have_attribute('src', '/static/avatars/female-2.webp?v=1')
+                await expect(task.locator('.card-comments')).to_have_text('3')
+                self.assertTrue(await task.evaluate('(node, original) => node === original', original))
+
+                card.update(comment_count=0, latest_commenter=None)
+                await self.board_event()
+                await expect(task.locator('.card-comments')).to_have_count(0)
+                self.assertTrue(await task.evaluate('(node, original) => node === original', original))
+                await original.dispose()
+        self.assertFalse(self.errors)
+
     async def settle_board_scrollbar(self):
         # Scroll events and their animation frames can arrive after scrollLeft
         # changes. Start mutation assertions only once the thumb catches up.

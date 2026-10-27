@@ -857,7 +857,20 @@ function cardNode(card, column) {
   const bits = [];
   if (due) bits.push(metaBit("calendar", due.text, due.over ? "due is-over" : due.today ? "due is-today" : "due"));
   if (card.checklist.total) bits.push(metaBit("check", `${card.checklist.done}/${card.checklist.total}`));
-  if (card.comment_count) bits.push(metaBit("comment", String(card.comment_count)));
+  if (card.comment_count) {
+    const label = `${card.comment_count} 条评论${card.latest_commenter ? `，最新评论：${card.latest_commenter.display_name}` : ""}`;
+    const badge = metaBit("comment", String(card.comment_count), "card-comments");
+    badge.setAttribute("role", "img");
+    badge.setAttribute("aria-label", label);
+    badge.title = label;
+    if (card.latest_commenter) {
+      const face = avatar(card.latest_commenter);
+      face.setAttribute("aria-hidden", "true");
+      face.removeAttribute("title");
+      badge.prepend(face);
+    }
+    bits.push(badge);
+  }
   if (card.attachment_count) bits.push(metaBit("paperclip", String(card.attachment_count)));
   const faces = cardFaces(card, state.board.members);
   if (bits.length || faces.length) node.append(el("div", { class: "card-foot" }, ...bits, el("span", { class: "spacer" }), ...faces.map(faceNode)));

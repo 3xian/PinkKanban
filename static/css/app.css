@@ -348,6 +348,8 @@ button.pill.is-on { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c, #8b7
 .faces .avatar:first-child { margin-left: 0; }
 .card-foot .avatar { width: 23px; height: 23px; font-size: 9px; border: 2px solid #ffffffd9; }
 .card-foot .avatar.is-lead { border-color: #fff; box-shadow: 0 0 0 1px #84709480; }
+.card-foot .card-comments { gap: 4px; }
+.card-foot .card-comments .avatar { width: 16px; height: 16px; border: 0; }
 .composer { display: flex; gap: 6px; align-items: center; min-width: 0; }
 .composer input { width: auto; flex: 1; min-width: 0; padding: 8px 10px; font-size: 12px; }
 .composer > button { flex: none; white-space: nowrap; }

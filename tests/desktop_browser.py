@@ -53,7 +53,7 @@ CARDS = [
         due_on=(date.today()+timedelta(days=[-2, 0, 3, 0, -1, 4, 0, 2][i])).isoformat() if i != 6 else None,
         done=i in (4, 5, 7), archived=False, can_edit=True,
         assignee_ids=[1, 3], responsible_user_id=2, label_ids=[1],
-        checklist={'done': 1, 'total': 3}, comment_count=2, attachment_count=1,
+        checklist={'done': 1, 'total': 3}, comment_count=2, latest_commenter=MEMBERS[1], attachment_count=1,
         project_id=i % 3+1, project_name=PROJECTS[i % 3]['name'],
         project_color=PROJECTS[i % 3]['color'], column_name=COLUMN_NAMES[i % 4],
     )

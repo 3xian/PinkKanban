@@ -139,6 +139,7 @@ def board_dict(db: Session, project_id: int, user: User) -> dict:
     assignee_map: dict[int, list[int]] = defaultdict(list)
     checks: dict[int, tuple[int, int]] = {}
     comments: dict[int, int] = {}
+    latest_commenters: dict[int, User] = {}
     files: dict[int, int] = {}
     if card_ids:
         for link in db.scalars(select(CardLabel).where(CardLabel.card_id.in_(card_ids))):
@@ -152,12 +153,26 @@ def board_dict(db: Session, project_id: int, user: User) -> dict:
             .group_by(Checklist.card_id)
         )
         checks = {card_id: (int(done or 0), int(total or 0)) for card_id, total, done in check_rows}
-        comments = {
-            card_id: int(total)
-            for card_id, total in db.execute(
-                select(Comment.card_id, func.count()).where(Comment.card_id.in_(card_ids)).group_by(Comment.card_id)
+        ranked_comments = (
+            select(
+                Comment.card_id,
+                Comment.user_id,
+                func.count().over(partition_by=Comment.card_id).label("total"),
+                func.row_number().over(
+                    partition_by=Comment.card_id,
+                    order_by=(Comment.created_at.desc(), Comment.id.desc()),
+                ).label("rank"),
             )
-        }
+            .where(Comment.card_id.in_(card_ids))
+            .subquery()
+        )
+        for card_id, total, person in db.execute(
+            select(ranked_comments.c.card_id, ranked_comments.c.total, User)
+            .join(User, User.id == ranked_comments.c.user_id)
+            .where(ranked_comments.c.rank == 1)
+        ):
+            comments[card_id] = int(total)
+            latest_commenters[card_id] = person
         files = {
             card_id: int(total)
             for card_id, total in db.execute(
@@ -167,7 +182,7 @@ def board_dict(db: Session, project_id: int, user: User) -> dict:
     grouped: dict[int, list[dict]] = defaultdict(list)
     for card in cards:
         done, total = checks.get(card.id, (0, 0))
-        grouped[card.column_id].append(_card_brief(card, label_map[card.id], assignee_map[card.id], done, total, comments.get(card.id, 0), files.get(card.id, 0)))
+        grouped[card.column_id].append(_card_brief(card, label_map[card.id], assignee_map[card.id], done, total, comments.get(card.id, 0), files.get(card.id, 0), latest_commenters.get(card.id)))
     labels = [
         {"id": label.id, "name": label.name, "color": label.color}
         for label in db.scalars(select(Label).where(Label.project_id == project.id).order_by(Label.id))
