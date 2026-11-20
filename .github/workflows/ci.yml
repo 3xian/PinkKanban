@@ -19,19 +19,6 @@ jobs:
     name: Backend and web regressions
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    services:
-      mariadb:
-        image: mariadb:10.11
-        env:
-          MARIADB_DATABASE: kanban_test
-          MARIADB_USER: kanban
-          MARIADB_PASSWORD: kanban
-          MARIADB_ROOT_PASSWORD: ci-only-root
-        ports:
-          - 3307:3306
-        options: >-
-          --health-cmd="healthcheck.sh --connect --innodb_initialized"
-          --health-interval=5s --health-timeout=5s --health-retries=20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -44,6 +31,26 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'
+      - name: Provision native MariaDB 11.8.10
+        run: |
+          # Don't reuse the hosted runner's preinstalled MySQL data directory.
+          if sudo test -d /var/lib/mysql; then
+            sudo systemctl stop mysql
+            sudo mv /var/lib/mysql "$RUNNER_TEMP/image-mysql"
+          fi
+          curl -fsSLo "$RUNNER_TEMP/mariadb.asc" https://mariadb.org/mariadb_release_signing_key.pgp
+          sudo install -m 0644 "$RUNNER_TEMP/mariadb.asc" /etc/apt/keyrings/mariadb.asc
+          echo 'deb [signed-by=/etc/apt/keyrings/mariadb.asc] https://archive.mariadb.org/mariadb-11.8.10/repo/ubuntu noble main' | sudo tee /etc/apt/sources.list.d/mariadb.list
+          sudo apt-get update
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends 'mariadb-server=1:11.8.10+maria~ubu2404'
+          sudo systemctl start mariadb
+          sudo mariadb --protocol=socket <<'SQL'
+          CREATE DATABASE kanban_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+          CREATE USER 'kanban_test'@'127.0.0.1' IDENTIFIED BY 'kanban_test';
+          GRANT ALL ON `kanban\_test`.* TO 'kanban_test'@'127.0.0.1';
+          SQL
+          version=$(MYSQL_PWD=kanban_test mariadb --protocol=tcp -h 127.0.0.1 -P 3306 -u kanban_test -NBe 'SELECT VERSION()' kanban_test)
+          [[ "$version" == 11.8.10-MariaDB* ]]
       - name: Install Python and browser dependencies
         run: |
           python -m pip install -r requirements.txt playwright

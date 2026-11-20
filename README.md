@@ -43,11 +43,11 @@
 
 ## 快速开始
 
-以下命令均在仓库根目录执行。Docker Compose **只启动数据库**，Web 服务通过 Python 单独启动。
+以下命令均在仓库根目录执行，适用于全新开发环境。已有部署请保留 `.env`，直接参阅[部署与升级](#部署与升级)。
 
 ### 1. 准备环境与配置
 
-需要 Python（建议 3.12，与 CI 一致）、Docker 和 Docker Compose。日常运行不需要 Node.js，也没有前端打包步骤。
+需要 Python（建议 3.12，与 CI 一致）和安装在本机的 MariaDB Server **11.8.10**（含 `mariadb` 客户端）。日常运行不需要 Node.js，也没有前端打包步骤。
 
 Linux / macOS：
 
@@ -70,13 +70,24 @@ copy .env.example .env
 
 配置读取自 `.env`，但不会覆盖已有环境变量。完整选项见[配置](#配置)。
 
-### 2. 启动数据库
+### 2. 准备本机数据库
 
-```bash
-docker compose up -d --wait
+从 [MariaDB 11.8.10 官方归档](https://archive.mariadb.org/mariadb-11.8.10/)选择适合系统的原生安装包。在服务端配置的 `[mariadbd]` 段设置 `bind-address=127.0.0.1` 和 `port=3306`，启用 TCP，再启动系统的 MariaDB 服务。Linux 使用 systemd 的安装可执行 `sudo systemctl enable --now mariadb`。
+
+在**全新开发实例**中，用管理员身份登录 MariaDB（采用 Unix socket 认证的 Linux 安装可用 `sudo mariadb`），执行：
+
+```sql
+CREATE DATABASE kanban CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'kanban'@'127.0.0.1' IDENTIFIED BY 'kanban';
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES
+    ON `kanban`.* TO 'kanban'@'127.0.0.1';
 ```
 
-仓库使用 MariaDB 10.11，宿主端口为 **3307**，不占用 3306；数据保存在 Compose 的 `kanban_db` 命名卷中（实际卷名通常带项目名前缀）。默认连接串已写入 `.env.example`。
+示例口令仅供本地开发。用应用账号验证 TCP 连接；输出应为开发库 `kanban` 和以 `11.8.10-MariaDB` 开头的服务端版本：
+
+```bash
+mariadb --protocol=TCP -h 127.0.0.1 -P 3306 -u kanban -p kanban -e "SELECT DATABASE(), VERSION();"
+```
 
 ### 3. 启动 Web 服务
 
@@ -108,7 +119,7 @@ curl http://127.0.0.1:8000/api/health
 
 | 现象 | 检查项 |
 | --- | --- |
-| 数据库连接失败 | `docker compose ps` 是否健康；3307 是否被占用；`DATABASE_URL` 是否与数据库账号一致 |
+| 数据库连接失败 | 检查 MariaDB 服务是否监听 `127.0.0.1:3306`；用上面的 TCP 命令核对 `DATABASE_URL` 的账号、密码和库名 |
 | 验证码返回 503 | `SMTP_HOST` 是否填写；SMTP 凭据、发件人、端口与 SSL / STARTTLS 是否匹配 |
 | 改了 `.env` 仍未生效 | 重启 Web 服务；检查同名环境变量，它们优先于 `.env` |
 | 本地 HTTP 登录无法保持 | 本地使用 `APP_SECURE_COOKIE=0`；`1` 仅用于 HTTPS |
@@ -117,7 +128,7 @@ curl http://127.0.0.1:8000/api/health
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
-| `DATABASE_URL` | `mysql+pymysql://kanban:kanban@127.0.0.1:3307/kanban?charset=utf8mb4` | 必须包含库名；库不存在时尝试自动创建，账号需有相应权限 |
+| `DATABASE_URL` | `mysql+pymysql://kanban:kanban@127.0.0.1:3306/kanban?charset=utf8mb4` | 本机 TCP 直连；必须包含库名，建议由管理员预建并只授予该库权限 |
 | `SECRET_KEY` | `dev-only-change-me` | 会话签名密钥；必须替换为自己的长随机值，不能沿用示例值 |
 | `APP_TIMEZONE` | `Asia/Shanghai` | 每日项目配额的自然日边界 |
 | `DAILY_PROJECT_LIMIT` | `30` | 每人每天最多新建项目数；非整数回退 30，最小 1，超限返回 429 |
@@ -132,15 +143,15 @@ curl http://127.0.0.1:8000/api/health
 
 ## 部署与升级
 
-仓库的 Compose 配置是**开发数据库配置，不是完整的生产部署方案**。
+生产环境使用本机 MariaDB 11.8.10，应用通过 `127.0.0.1:3306` 直连。
 
-- **更换凭据**：替换 `SECRET_KEY`、MariaDB root 与 `kanban` 密码，同步修改 `DATABASE_URL`。Compose 中的口令为明文开发口令；已有数据卷不会因修改初始化环境变量而自动改密码。
-- **限制数据库暴露**：Compose 的 `3307:3306` 未限定监听地址。生产环境应将数据库限制在本机或私有网络，不直接暴露公网。
+- **保留现有配置和数据**：已正常连接的生产实例不要重建数据库、重置密码或用 `.env.example` 覆盖 `.env`。全新部署需单独设置强随机 `SECRET_KEY` 和数据库口令，应用使用仅获业务库权限的账号，不使用 root 或开发凭据。
+- **限制数据库暴露**：数据库只监听回环地址，不向公网开放 3306。
 - **使用 HTTPS**：由反向代理提供 HTTPS，设置 `APP_SECURE_COOKIE=1`；本地启动命令仅监听 `127.0.0.1`。
 - **配置发信服务**：SMTP 是注册流程的必要条件，不能以测试捕获模式代替。
 - **保持单 worker / 单实例假设**：接口限流与 SSE 看板通知订阅均保存在进程内存中，多 worker 或多副本不会共享；扩展前需接入共享限流存储与发布订阅通道。
 - **允许 SSE 长连接**：`/api/projects/{id}/events` 返回 `X-Accel-Buffering: no` 禁用 nginx 响应缓冲，每 15 秒发送心跳。其他代理也需关闭事件流缓冲并允许持续连接。前端连接正常时不定时读取看板；连接异常时每 15 秒读取作为降级，重连后获取最新快照补齐离线变化。
-- **持久化与备份**：使用仓库 Compose 时数据库在命名卷中；使用独立 MariaDB 时由数据库部署管理。数据库与 `uploads/` 附件都需备份，附件目录需可写。同步代码时保留 `.env` 和 `uploads/`。
+- **持久化与备份**：使用 MariaDB 的备份工具定期备份业务库并验证可恢复性；同时备份 `uploads/` 附件并确保目录可写。同步代码时保留 `.env` 和 `uploads/`。
 
 启动会检查数据库，必要时尝试 `CREATE DATABASE`，再通过 `create_all` 创建缺失表。**`create_all` 不会修改已有表结构**；当前启动升级会为 `cards` 补充可空的 `responsible_user_id` 列、索引和外键，为 `users` 补充可空的 `avatar_id` 列，并将 `access_tokens.expires_at` 升级为可空，保留已有数据。数据库账号需有相应 DDL 权限；升级前备份，更新后重启后端。使用名为 `pinkkanban.service` 的 systemd 服务时，重启该服务。
 
@@ -165,11 +176,11 @@ curl http://127.0.0.1:8000/api/health
 | 层 | 选型 / 入口 |
 | --- | --- |
 | API | FastAPI，[`app/main.py`](app/main.py)，紧凑 UTF-8 JSON 响应 |
-| ORM / 数据库 | SQLAlchemy 2 + PyMySQL / MariaDB 10.11 |
+| ORM / 数据库 | SQLAlchemy 2 + PyMySQL / 本机 MariaDB 11.8.10 |
 | 前端 | [`static/js/`](static/js/) 原生 ES Module + CSS，无打包器 |
 | 密码 / 会话 | `hashlib.scrypt`（`n=2**14`）/ HMAC-SHA256 签名 token，存于 Cookie |
 | Android | [`android/`](android/README.md)，原生 Java + WebView |
-| 测试 / 数据库初始化 | [`tests/`](tests/) / [`deploy/initdb/`](deploy/initdb/) |
+| 测试 | [`tests/`](tests/)；MariaDB 测试库初始化见下文 |
 
 ### 界面与交互
 
@@ -183,7 +194,16 @@ curl http://127.0.0.1:8000/api/health
 
 ### 后端测试
 
-先按[快速开始](#快速开始)准备虚拟环境与数据库，再执行：
+先按[快速开始](#快速开始)准备虚拟环境和本地开发用 MariaDB。只在开发机上，以数据库管理员身份为测试单独建库、建账号：
+
+```sql
+CREATE DATABASE kanban_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'kanban_test'@'127.0.0.1' IDENTIFIED BY 'kanban_test';
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES, DROP
+    ON `kanban\_test`.* TO 'kanban_test'@'127.0.0.1';
+```
+
+授权中的 `\_` 使下划线按字面匹配。测试账号需要删除和重建表，但不应拥有业务库权限。然后执行：
 
 ```bash
 python -m pytest
@@ -191,9 +211,7 @@ python -m pytest
 
 Windows 使用 `.venv/Scripts/python.exe -m pytest`。
 
-> **测试会删除测试库中的全部表。** `tests/conftest.py` 将 `DATABASE_URL` 覆盖为本机 3307 上的 `kanban_test`，每个用例前调用 `truncate_all()` 重建表，并清空限流和邮件捕获状态。不要将测试配置改成生产库，也不要让该端口指向生产数据库。
-
-`kanban_test` 由 [`deploy/initdb/01-test-db.sql`](deploy/initdb/01-test-db.sql) 在数据库卷首次初始化时创建并授权。已有卷不会重跑初始化脚本；缺少测试库时需手动创建并授予 `kanban` 用户权限，不要为此删除含有业务数据的卷。
+> **测试会删除测试库中的全部表。** `tests/conftest.py` 覆盖 `DATABASE_URL`，固定通过 `127.0.0.1:3306` 以 `kanban_test` 账号连接同名库；使用 `client` 的用例会先执行 `truncate_all()` 重建表、清空限流和邮件捕获状态。不要在生产主机运行，也不要把测试连接转发到生产实例。
 
 测试通过 `TestClient` 携带 `X-Kanban: 1`，使用 `MAIL_CAPTURE=1` 捕获验证码，不连接真实 SMTP。覆盖认证、请求头校验、验证码、看板初始化、邀请、角色权限、配额、附件、截止日期、主负责人及任务创建事务。测试范围不等于当前版本已通过，结果以实际运行记录为准。
 
@@ -225,7 +243,7 @@ python tests/desktop_browser.py
 
 创建表单打开期间延后远端更新，关闭后恢复同步；对应回归验证草稿保留及取消后的列表刷新。后端事务用例需要本地 `kanban_test` 数据库。
 
-[CI](.github/workflows/ci.yml) 执行后端、JavaScript 单测、`startup_browser.py`、Android QA 边界检查及 Android 构建；同时执行 `desktop_browser.py` 验证布局和任务交互。[发布流程](.github/workflows/release.yml)签名并发布 APK，不部署服务器。Android 本地验收见[客户端文档](android/README.md)。
+[CI](.github/workflows/ci.yml) 在临时运行器上启动原生 MariaDB 11.8.10，只创建测试库和对应的测试账号，不使用生产凭据。其余检查包括 JavaScript 单测、`startup_browser.py`、`desktop_browser.py`、Android QA 边界检查及 Android 构建。[发布流程](.github/workflows/release.yml)签名并发布 APK，不部署服务器。Android 本地验收见[客户端文档](android/README.md)。
 
 ## API
 

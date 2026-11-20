@@ -1,6 +1,7 @@
 import os
 
-os.environ["DATABASE_URL"] = "mysql+pymysql://kanban:kanban@127.0.0.1:3307/kanban_test?charset=utf8mb4"
+# Never inherit deployment credentials: truncate_all() drops and recreates tables.
+os.environ["DATABASE_URL"] = "mysql+pymysql://kanban_test:kanban_test@127.0.0.1:3306/kanban_test?charset=utf8mb4"
 os.environ["SECRET_KEY"] = "test-secret-key-not-for-production"
 os.environ["DAILY_PROJECT_LIMIT"] = "30"
 os.environ["MAIL_CAPTURE"] = "1"

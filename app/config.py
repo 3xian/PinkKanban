@@ -26,7 +26,7 @@ load_env()
 def database_url() -> str:
     return os.environ.get(
         "DATABASE_URL",
-        "mysql+pymysql://kanban:kanban@127.0.0.1:3307/kanban?charset=utf8mb4",
+        "mysql+pymysql://kanban:kanban@127.0.0.1:3306/kanban?charset=utf8mb4",
     )
 
 

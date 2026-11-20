@@ -32,7 +32,7 @@ Release 默认未签名，使用 Android Studio 的 **Generate Signed App Bundle
 
 ## 自动构建与发布
 
-GitHub Actions 的 `CI` 在分支 push、PR 和手动运行时检查后端 API、网页单测、浏览器启动流程、QA 服务边界，并构建 Debug / Release APK、运行 Android 单测和 Lint。后端只使用 Actions 临时 MariaDB 的 `kanban_test` 库；普通 CI 不读取发布密钥。APK 和 Android 检查报告保存在运行的 Artifacts 中。
+GitHub Actions 的 `CI` 在分支 push、PR 和手动运行时检查后端 API、网页单测、浏览器启动流程、QA 服务边界，并构建 Debug / Release APK、运行 Android 单测和 Lint。后端通过 `127.0.0.1:3306` 连接临时运行器上的原生 MariaDB 11.8.10，仅使用 `kanban_test` 库；普通 CI 不读取发布密钥。APK 和 Android 检查报告保存在运行的 Artifacts 中。
 
 发布前修改 `android/app/build.gradle` 的 `versionName` 和递增的 `versionCode`，提交到 `main`，再推送对应的 `vMAJOR.MINOR.PATCH` 标签。例如版本名 `1.0.1` 对应标签 `v1.0.1`。`Android Release` 会检查标签属于 `main` 历史、重新运行完整 CI、确认 APK 版本与标签一致、签名并创建 GitHub Release（已有 Release 则更新 APK 和校验附件）。它不会部署服务器。
 
